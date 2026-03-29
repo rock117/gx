@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::fs;
+use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
 #[command(name = "gx")]
@@ -32,10 +32,6 @@ fn run() -> Result<()> {
     let args = Args::parse();
     let start_dir = args.path.unwrap_or_else(|| PathBuf::from("."));
 
-    // Canonicalize the path to get absolute path
-    let start_dir = fs::canonicalize(&start_dir)
-        .context("Failed to resolve start directory")?;
-
     // Validate that first argument is "git"
     if args.git_args.is_empty() || args.git_args[0] != "git" {
         anyhow::bail!("First argument must be 'git'. Usage: gx git <command> [args]");
@@ -50,60 +46,84 @@ fn run() -> Result<()> {
     println!("Max depth: {}", args.depth);
     println!("Command: git {}\n", git_cmd.join(" "));
 
-    process_directory(&start_dir, 0, args.depth, git_cmd)?;
+    // Step 1: Efficiently collect all git repositories using WalkDir
+    let repos = collect_git_repos(&start_dir, args.depth)?;
 
-    Ok(())
-}
-
-fn process_directory(dir: &Path, current_depth: usize, max_depth: usize, git_cmd: &[String]) -> Result<()> {
-    // Check if current directory is a git repository
-    if is_git_repo(dir) {
-        println!("📁 Found git repo: {}", dir.display());
-        execute_git_command(dir, git_cmd)?;
-    }
-
-    // Don't go deeper than max_depth
-    if current_depth >= max_depth {
+    if repos.is_empty() {
+        println!("No git repositories found.");
         return Ok(());
     }
 
-    // Recursively process subdirectories
-    let entries = fs::read_dir(dir)
-        .context(format!("Failed to read directory: {}", dir.display()))?;
+    println!("Found {} git repository(ies):", repos.len());
+    for repo in &repos {
+        println!("  📁 {}", repo.display());
+    }
+    println!();
 
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Skip hidden directories (except .git which we already checked)
-        if path.is_dir() {
-            let file_name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-
-            // Skip hidden directories and common non-project directories
-            if file_name.starts_with('.') && file_name != ".git" {
-                continue;
-            }
-
-            // Skip common directories that don't contain projects
-            matches!(file_name,
-                "node_modules" | "target" | "vendor" | "dist" | "build" |
-                ".vscode" | ".idea" | "cache" | "tmp" | "temp"
-            );
-
-            process_directory(&path, current_depth + 1, max_depth, git_cmd)?;
-        }
+    // Step 2: Execute git commands serially (preserves output order)
+    for repo in repos {
+        println!("📁 Executing in: {}", repo.display());
+        execute_git_command(&repo, git_cmd)?;
     }
 
     Ok(())
 }
 
-fn is_git_repo(dir: &Path) -> bool {
-    let git_dir = dir.join(".git");
-    git_dir.exists()
+/// Collect all git repositories up to the specified depth
+fn collect_git_repos(start_dir: &Path, max_depth: usize) -> Result<Vec<PathBuf>> {
+    let mut repos = Vec::new();
+
+    // WalkDir is much faster than manual recursive fs::read_dir
+    let walker = WalkDir::new(start_dir)
+        .max_depth(max_depth)
+        .into_iter()
+        .filter_entry(|entry| !should_skip_dir(entry));
+
+    for entry in walker {
+        let entry = entry.context("Failed to read directory entry")?;
+
+        // Only check directories, not files
+        if entry.file_type().is_dir() {
+            if is_git_repo(entry.path()) {
+                repos.push(entry.path().to_path_buf());
+            }
+        }
+    }
+
+    // Sort for consistent ordering
+    repos.sort();
+    Ok(repos)
 }
 
+/// Determine if a directory entry should be skipped
+fn should_skip_dir(entry: &walkdir::DirEntry) -> bool {
+    let file_name = entry.file_name();
+    let name = file_name.to_string_lossy();
+
+    // Don't skip root directory "."
+    if name == "." {
+        return false;
+    }
+
+    // Skip hidden directories (except .git)
+    if name.starts_with('.') && name != ".git" {
+        return true;
+    }
+
+    // Skip common non-project directories
+    matches!(
+        name.as_ref(),
+        "node_modules" | "target" | "vendor" | "dist" | "build"
+            | ".vscode" | ".idea" | "cache" | "tmp" | "temp"
+    )
+}
+
+/// Check if directory is a git repository
+fn is_git_repo(dir: &Path) -> bool {
+    dir.join(".git").exists()
+}
+
+/// Execute git command in the specified repository
 fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
     let output = Command::new("git")
         .args(git_cmd)
@@ -111,23 +131,22 @@ fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
         .output()
         .context(format!("Failed to execute git command in: {}", repo_dir.display()))?;
 
-    // Display stdout if present
+    // Display stdout
     if !output.stdout.is_empty() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         print!("{}", stdout);
     }
 
-    // Display stderr if present (git often outputs info to stderr)
+    // Display stderr
     if !output.stderr.is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // If command failed, show error indicator
         if !output.status.success() {
-            eprint!("  ⚠ Error: ");
+            eprint!("  ⚠ ");
         }
         eprint!("{}", stderr);
     }
 
-    // Add a blank line between repositories for better readability
+    // Add spacing between repositories
     if !output.stdout.is_empty() || !output.stderr.is_empty() {
         println!();
     }
