@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo new:*)",
+      "Bash(cargo init:*)",
+      "Bash(cargo build:*)",
+      "Bash(./target/release/gx --help)",
+      "Bash(./target/release/gx.exe --help)",
+      "Bash(git add:*)"
+    ]
+  }
+}
