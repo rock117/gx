@@ -6,7 +6,13 @@
       "Bash(cargo build:*)",
       "Bash(./target/release/gx --help)",
       "Bash(./target/release/gx.exe --help)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(./target/release/gx.exe git:*)",
+      "Bash(./target/release/gx.exe --config)"
     ]
   }
 }

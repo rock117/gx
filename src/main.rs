@@ -123,13 +123,21 @@ fn run() -> Result<()> {
 
     println!("Found {} git repository(ies):", repos.len());
     for repo in &repos {
-        println!("  📁 {}", repo.display());
+        let branch = get_current_branch(repo);
+        match branch.as_deref() {
+            Some(b) => println!("  📁 {} => \x1b[36m{}\x1b[0m", repo.display(), b),
+            None => println!("  📁 {}", repo.display()),
+        };
     }
     println!();
 
     // Step 2: Execute git commands serially (preserves output order)
     for repo in repos {
-        println!("📁 Executing in: {}", repo.display());
+        let branch = get_current_branch(&repo);
+        match branch.as_deref() {
+            Some(b) => println!("📁 Executing in: {} => \x1b[36m{}\x1b[0m", repo.display(), b),
+            None => println!("📁 Executing in: {}", repo.display()),
+        };
         execute_git_command(&repo, git_cmd)?;
     }
 
@@ -336,4 +344,24 @@ fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Get the current branch name of a git repository
+fn get_current_branch(repo_dir: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(repo_dir)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if branch.is_empty() || branch == "HEAD" {
+            None
+        } else {
+            Some(branch)
+        }
+    } else {
+        None
+    }
 }
