@@ -6,9 +6,12 @@ A command-line tool that recursively executes git commands across all git reposi
 
 - 🔍 Recursively search for git repositories in current directory and subdirectories
 - 🎯 Execute git commands in all found repositories
+- 🌲 Display current branch name for each repository
 - ⚙️ Configurable search depth (default: 3 levels)
 - 🚀 Skip common non-project directories (node_modules, target, vendor, etc.)
 - 📝 Support for complete git commands with arguments
+- 🔮 Dry-run mode to preview operations without executing
+- 📊 Progress indicators and execution statistics
 
 ## Installation
 
@@ -83,6 +86,11 @@ gx --path /path/to/projects git pull
 gx git log -1 --oneline
 ```
 
+**Preview what would be done without executing (dry-run):**
+```bash
+gx --dry-run git push
+```
+
 ### Options
 
 | Option | Short | Description | Default |
@@ -90,6 +98,7 @@ gx git log -1 --oneline
 | `--depth` | `-d` | Maximum directory depth to search | `3` |
 | `--path` | `-p` | Starting directory (absolute or relative path) | Current directory |
 | `--config` | - | Show configuration file location and contents | - |
+| `--dry-run` | - | Show what would be done without executing | - |
 | `--help` | `-h` | Show help message | - |
 
 ### Show Configuration
@@ -116,13 +125,65 @@ C:\Users\YourUsername\.gx\gx.json
 }
 ```
 
+### Dry-run Mode
+
+Preview what would be done without actually executing commands:
+
+```bash
+gx --dry-run git push
+```
+
+Output example:
+```
+[DRY RUN] Showing what would be done without executing
+
+Found 2 git repository(ies):
+  📁 ./repo1 => main
+  📁 ./repo2 => dev
+
+[1/2] 📁 ./repo1 => main
+  [DRY RUN] Would execute: git push in ./repo1
+[2/2] 📁 ./repo2 => dev
+  [DRY RUN] Would execute: git push in ./repo2
+
+[DRY RUN] Summary: 2 repositories would be affected
+```
+
+**Use cases for dry-run:**
+- 🔍 **Preview impact** - See which repositories will be affected
+- ⚠️ **Safety check** - Avoid accidental destructive operations
+- 🔧 **Debug configuration** - Verify exclusion patterns are working
+- 📊 **Performance estimate** - Know how many repos will be processed
+
+```bash
+gx --config
+```
+
+Output example:
+```
+📁 Configuration File Location:
+C:\Users\YourUsername\.gx\gx.json
+
+📄 Current Configuration:
+{
+  "default_depth": 5,
+  "exclude": {
+    "names": ["temp", "logs"],
+    "globs": ["*-backup"],
+    "regexes": ["^test-.*$"]
+  }
+}
+```
+
 ### Output
 
 The tool displays:
 - 🔍 Search directory and depth
-- 📁 Each git repository found
+- 📁 Each git repository found with current branch (color-coded)
+- 📊 Progress counter [X/total] for each repository
 - 📋 Git command output from each repository
-- ⚠️ Any errors encountered
+- 📈 Execution summary (total processed, succeeded, failed)
+- ⚠️ Any errors encountered (with color-coded indicators)
 
 Example output:
 ```
@@ -130,14 +191,27 @@ Searching for git repositories in: C:\Users\projects
 Max depth: 3
 Command: git pull
 
-📁 Found git repo: C:\Users\projects\project1
+Found 2 git repository(ies):
+  📁 ./project1 => main
+  📁 ./project2 => dev
+
+[1/2] 📁 ./project1 => main
 Already up to date.
-📁 Found git repo: C:\Users\projects\project2
+
+[2/2] 📁 ./project2 => dev
 Updating abc1234..def5678
 Fast-forward
  file.txt | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
+
+✓ Summary: 2 processed, 2 succeeded, 0 failed
 ```
+
+**Color coding:**
+- 🟦 Cyan - Branch names
+- 🟢 Green - Success indicators (✓)
+- 🟡 Yellow - Warnings and dry-run mode
+- 🔴 Red - Error indicators (✗)
 
 ## Configuration File
 
