@@ -1,23 +1,69 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
+
+/// Configuration file structure
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct Config {
+    /// Default maximum directory depth to search
+    #[serde(default = "default_depth")]
+    default_depth: usize,
+
+    /// Directories/patterns to exclude from search
+    #[serde(default)]
+    exclude: ExcludePatterns,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+struct ExcludePatterns {
+    /// Directory names to exclude
+    #[serde(default)]
+    names: Vec<String>,
+
+    /// Glob patterns to exclude
+    #[serde(default)]
+    globs: Vec<String>,
+
+    /// Regex patterns to exclude
+    #[serde(default)]
+    regexes: Vec<String>,
+}
+
+fn default_depth() -> usize {
+    3
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            default_depth: 3,
+            exclude: ExcludePatterns::default(),
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "gx")]
 #[command(about = "Execute git commands recursively in all git repositories", long_about = None)]
 struct Args {
-    /// Maximum directory depth to search (default: 3)
-    #[arg(short, long, default_value_t = 3)]
-    depth: usize,
+    /// Maximum directory depth to search (overrides config file)
+    #[arg(short, long)]
+    depth: Option<usize>,
 
     /// Starting directory (default: current directory)
     #[arg(short, long)]
     path: Option<PathBuf>,
 
+    /// Show configuration file location and contents
+    #[arg(long)]
+    config: bool,
+
     /// Git command and arguments (e.g., "git pull origin main")
-    #[arg(required = true, num_args = 1..)]
+    #[arg(required_unless_present = "config", num_args = 1..)]
     git_args: Vec<String>,
 }
 
@@ -30,6 +76,18 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = Args::parse();
+
+    // Handle --config flag
+    if args.config {
+        show_config_info()?;
+        return Ok(());
+    }
+
+    // Load or create configuration file
+    let config = load_or_create_config()?;
+
+    // Use command line depth if provided, otherwise use config default
+    let depth = args.depth.unwrap_or(config.default_depth);
     let start_dir = args.path.unwrap_or_else(|| PathBuf::from("."));
 
     // Validate that first argument is "git"
@@ -43,11 +101,20 @@ fn run() -> Result<()> {
     }
 
     println!("Searching for git repositories in: {}", start_dir.display());
-    println!("Max depth: {}", args.depth);
+    println!("Max depth: {}", depth);
     println!("Command: git {}\n", git_cmd.join(" "));
 
+    // Compile regex patterns from config
+    let exclude_regexes: Result<Vec<regex::Regex>> = config
+        .exclude
+        .regexes
+        .iter()
+        .map(|pattern| regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern)))
+        .collect();
+    let exclude_regexes = exclude_regexes.unwrap_or_default();
+
     // Step 1: Efficiently collect all git repositories using WalkDir
-    let repos = collect_git_repos(&start_dir, args.depth)?;
+    let repos = collect_git_repos(&start_dir, depth, &config, &exclude_regexes)?;
 
     if repos.is_empty() {
         println!("No git repositories found.");
@@ -69,15 +136,83 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+/// Get the configuration file path (cross-platform)
+fn get_config_path() -> Result<PathBuf> {
+    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
+    let config_dir = home_dir.join(".gx");
+
+    // Create .gx directory if it doesn't exist
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir)
+            .context(format!("Failed to create config directory: {}", config_dir.display()))?;
+    }
+
+    Ok(config_dir.join("gx.json"))
+}
+
+/// Show configuration file location and contents
+fn show_config_info() -> Result<()> {
+    let config_path = get_config_path()?;
+
+    println!("📁 Configuration File Location:");
+    println!("{}\n", config_path.display());
+
+    if config_path.exists() {
+        let content = fs::read_to_string(&config_path)
+            .context("Failed to read config file")?;
+
+        println!("📄 Current Configuration:");
+        println!("{}", content);
+    } else {
+        println!("⚠ Configuration file does not exist yet.");
+        println!("It will be created automatically on first run with default values.");
+    }
+
+    Ok(())
+}
+
+/// Load existing config or create default config file
+fn load_or_create_config() -> Result<Config> {
+    let config_path = get_config_path()?;
+
+    if config_path.exists() {
+        let content = fs::read_to_string(&config_path)
+            .context(format!("Failed to read config file: {}", config_path.display()))?;
+
+        let config: Config = serde_json::from_str(&content)
+            .context(format!("Failed to parse config file: {}", config_path.display()))?;
+
+        Ok(config)
+    } else {
+        // Create default config file
+        let default_config = Config::default();
+        let content = serde_json::to_string_pretty(&default_config)
+            .context("Failed to serialize default config")?;
+
+        fs::write(&config_path, content)
+            .context(format!("Failed to write config file: {}", config_path.display()))?;
+
+        eprintln!("Created default config file at: {}", config_path.display());
+        eprintln!("You can customize it to set default depth and exclude patterns.\n");
+
+        Ok(default_config)
+    }
+}
+
 /// Collect all git repositories up to the specified depth
-fn collect_git_repos(start_dir: &Path, max_depth: usize) -> Result<Vec<PathBuf>> {
+fn collect_git_repos(
+    start_dir: &Path,
+    max_depth: usize,
+    config: &Config,
+    exclude_regexes: &[regex::Regex],
+) -> Result<Vec<PathBuf>> {
     let mut repos = Vec::new();
 
     // WalkDir is much faster than manual recursive fs::read_dir
     let walker = WalkDir::new(start_dir)
         .max_depth(max_depth)
         .into_iter()
-        .filter_entry(|entry| !should_skip_dir(entry));
+        .filter_entry(|entry| !should_skip_dir(entry, config, exclude_regexes));
 
     for entry in walker {
         let entry = entry.context("Failed to read directory entry")?;
@@ -96,7 +231,11 @@ fn collect_git_repos(start_dir: &Path, max_depth: usize) -> Result<Vec<PathBuf>>
 }
 
 /// Determine if a directory entry should be skipped
-fn should_skip_dir(entry: &walkdir::DirEntry) -> bool {
+fn should_skip_dir(
+    entry: &walkdir::DirEntry,
+    config: &Config,
+    exclude_regexes: &[regex::Regex],
+) -> bool {
     let file_name = entry.file_name();
     let name = file_name.to_string_lossy();
 
@@ -110,12 +249,57 @@ fn should_skip_dir(entry: &walkdir::DirEntry) -> bool {
         return true;
     }
 
-    // Skip common non-project directories
-    matches!(
+    // Skip built-in common non-project directories
+    if matches!(
         name.as_ref(),
         "node_modules" | "target" | "vendor" | "dist" | "build"
             | ".vscode" | ".idea" | "cache" | "tmp" | "temp"
-    )
+    ) {
+        return true;
+    }
+
+    // Check against config file exclusion patterns
+
+    let full_path = entry.path();
+
+    // 1. Check directory names and full paths
+    for pattern in &config.exclude.names {
+        // Check if pattern matches directory name
+        if pattern == &*name {
+            return true;
+        }
+
+        // Check if pattern matches full path (supports both / and \ separators)
+        let path_str = full_path.to_str().unwrap_or("");
+        let pattern_normalized = pattern.replace('\\', "/");
+        let path_normalized = path_str.replace('\\', "/");
+
+        // Match exact path or path ending with pattern
+        if path_normalized == pattern_normalized
+            || path_normalized.starts_with(&format!("{}/", pattern_normalized))
+            || path_normalized.ends_with(&format!("/{}", pattern_normalized))
+        {
+            return true;
+        }
+    }
+
+    // 2. Check glob patterns
+    for glob_pattern in &config.exclude.globs {
+        if let Ok(matched) = glob::Pattern::new(glob_pattern) {
+            if matched.matches_path(full_path) {
+                return true;
+            }
+        }
+    }
+
+    // 3. Check regex patterns
+    for regex in exclude_regexes {
+        if regex.is_match(&name) || regex.is_match(full_path.to_str().unwrap_or("")) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Check if directory is a git repository

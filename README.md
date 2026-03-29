@@ -89,7 +89,32 @@ gx git log -1 --oneline
 |--------|-------|-------------|---------|
 | `--depth` | `-d` | Maximum directory depth to search | `3` |
 | `--path` | `-p` | Starting directory (absolute or relative path) | Current directory |
+| `--config` | - | Show configuration file location and contents | - |
 | `--help` | `-h` | Show help message | - |
+
+### Show Configuration
+
+To view your configuration file location and current settings:
+
+```bash
+gx --config
+```
+
+Output example:
+```
+📁 Configuration File Location:
+C:\Users\YourUsername\.gx\gx.json
+
+📄 Current Configuration:
+{
+  "default_depth": 5,
+  "exclude": {
+    "names": ["temp", "logs"],
+    "globs": ["*-backup"],
+    "regexes": ["^test-.*$"]
+  }
+}
+```
 
 ### Output
 
@@ -114,9 +139,115 @@ Fast-forward
  1 file changed, 1 insertion(+), 1 deletion(-)
 ```
 
-## Directories Skipped
+## Configuration File
 
-The tool automatically skips these common non-project directories:
+`gx` supports a configuration file for customizing default behavior. The config file is automatically created on first run at:
+
+**Windows:** `C:\Users\YourUsername\.gx\gx.json`
+**Linux/Mac:** `~/.gx/gx.json`
+
+### Configuration Options
+
+```json
+{
+  "default_depth": 3,
+  "exclude": {
+    "names": ["temp", "logs"],
+    "globs": ["*-backup", "archive/*"],
+    "regexes": ["^test-.*$", ".*-temp$"]
+  }
+}
+```
+
+#### Fields
+
+- **`default_depth`** (number, default: `3`)
+  - Default directory search depth if not specified via command line
+  - Can be overridden with `--depth` option
+
+- **`exclude`** (object)
+  - **`names`** (array of strings): Directory names to exclude
+  - **`globs`** (array of strings): Glob patterns for path matching
+  - **`regexes`** (array of strings): Regular expression patterns
+
+#### Exclusion Pattern Examples
+
+**Exclude by directory name:**
+```json
+{
+  "exclude": {
+    "names": ["build", "dist", "coverage"]
+  }
+}
+```
+
+**Exclude by full path:**
+```json
+{
+  "exclude": {
+    "names": [
+      "C:/Users/Name/temp",
+      "/home/user/projects/old-project",
+      "projects/archive"
+    ]
+  }
+}
+```
+
+**Note:** The `names` field supports both directory names and full/relative paths. Path matching works with both `/` and `\` separators on all platforms.
+
+**Exclude by glob patterns:**
+```json
+{
+  "exclude": {
+    "globs": [
+      "*-backup",
+      "archive/*",
+      "*/.backup/*"
+    ]
+  }
+}
+```
+
+**Exclude by regex:**
+```json
+{
+  "exclude": {
+    "regexes": [
+      "^test-",
+      ".*-temp$",
+      "\\d+-backup"
+    ]
+  }
+}
+```
+
+**Combined example:**
+```json
+{
+  "default_depth": 5,
+  "exclude": {
+    "names": ["node_modules", "target", ".venv"],
+    "globs": ["*-old", "deprecated/*"],
+    "regexes": ["^backup-.*$", ".*-test$"]
+  }
+}
+```
+
+### Priority
+
+Command line options take precedence over config file settings:
+```bash
+# Uses depth from config file
+gx git pull
+
+# Overrides config file depth
+gx --depth 10 git pull
+```
+
+## Built-in Exclusions
+
+The tool automatically skips these directories (in addition to your config):
 - Hidden directories (starting with `.`)
 - `node_modules`
 - `target`
