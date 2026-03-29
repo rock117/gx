@@ -62,6 +62,10 @@ struct Args {
     #[arg(long)]
     config: bool,
 
+    /// Show what would be done without actually executing
+    #[arg(long)]
+    dry_run: bool,
+
     /// Git command and arguments (e.g., "git pull origin main")
     #[arg(required_unless_present = "config", num_args = 1..)]
     git_args: Vec<String>,
@@ -104,6 +108,10 @@ fn run() -> Result<()> {
     println!("Max depth: {}", depth);
     println!("Command: git {}\n", git_cmd.join(" "));
 
+    if args.dry_run {
+        println!("\x1b[33m[DRY RUN] Showing what would be done without executing\x1b[0m\n");
+    }
+
     // Compile regex patterns from config
     let exclude_regexes: Result<Vec<regex::Regex>> = config
         .exclude
@@ -132,13 +140,43 @@ fn run() -> Result<()> {
     println!();
 
     // Step 2: Execute git commands serially (preserves output order)
-    for repo in repos {
-        let branch = get_current_branch(&repo);
+    let total = repos.len();
+    let mut succeeded = 0;
+    let mut failed = 0;
+
+    for (index, repo) in repos.iter().enumerate() {
+        let branch = get_current_branch(repo);
+        let progress = format!("[{}/{}]", index + 1, total);
+
         match branch.as_deref() {
-            Some(b) => println!("📁 Executing in: {} => \x1b[36m{}\x1b[0m", repo.display(), b),
-            None => println!("📁 Executing in: {}", repo.display()),
+            Some(b) => println!("{} 📁 {} => \x1b[36m{}\x1b[0m", progress, repo.display(), b),
+            None => println!("{} 📁 {}", progress, repo.display()),
         };
-        execute_git_command(&repo, git_cmd)?;
+
+        if args.dry_run {
+            println!("  [DRY RUN] Would execute: git {} in {}",
+                git_cmd.join(" "),
+                repo.display());
+        } else {
+            match execute_git_command(&repo, git_cmd) {
+                Ok(_) => succeeded += 1,
+                Err(_) => failed += 1,
+            }
+        }
+    }
+
+    // Show summary
+    println!();
+    if args.dry_run {
+        println!("\x1b[33m[DRY RUN] Summary: {} repositories would be affected\x1b[0m", total);
+    } else {
+        let status = if failed == 0 {
+            "\x1b[32m✓\x1b[0m"
+        } else {
+            "\x1b[33m⚠\x1b[0m"
+        };
+        println!("{} Summary: \x1b[36m{}\x1b[0m processed, \x1b[32m{}\x1b[0m succeeded, \x1b[31m{}\x1b[0m failed",
+            status, total, succeeded, failed);
     }
 
     Ok(())
@@ -333,7 +371,7 @@ fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
     if !output.stderr.is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
-            eprint!("  ⚠ ");
+            eprint!("  \x1b[31m✗ Error:\x1b[0m ");
         }
         eprint!("{}", stderr);
     }
@@ -341,6 +379,11 @@ fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
     // Add spacing between repositories
     if !output.stdout.is_empty() || !output.stderr.is_empty() {
         println!();
+    }
+
+    // Return error if git command failed
+    if !output.status.success() {
+        anyhow::bail!("Git command failed with exit code: {:?}", output.status.code());
     }
 
     Ok(())
