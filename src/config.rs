@@ -153,9 +153,3 @@ pub fn show_config_info() -> Result<()> {
     Ok(())
 }
 
-/// Load existing config or create default config file (legacy function for backward compatibility)
-#[deprecated(note = "Use load_merged_config() instead")]
-pub fn load_or_create_config() -> Result<Config> {
-    let (config, _) = load_merged_config()?;
-    Ok(config)
-}
