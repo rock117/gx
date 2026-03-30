@@ -13,6 +13,7 @@ use collect::collect_git_repos;
 #[derive(Parser, Debug)]
 #[command(name = "gx")]
 #[command(about = "Execute git commands recursively in all git repositories", long_about = None)]
+#[command(args_conflicts_with_subcommands = false)]
 struct Args {
     /// Maximum directory depth to search (overrides config file)
     #[arg(short, long)]
@@ -31,7 +32,7 @@ struct Args {
     dry_run: bool,
 
     /// Git command and arguments (e.g., "git pull origin main")
-    #[arg(required_unless_present = "config", num_args = 1..)]
+    #[arg(required_unless_present = "config", num_args = 1.., allow_hyphen_values = true)]
     git_args: Vec<String>,
 }
 
