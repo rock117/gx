@@ -12,7 +12,10 @@
       "Bash(git branch:*)",
       "Bash(git push:*)",
       "Bash(./target/release/gx.exe git:*)",
-      "Bash(./target/release/gx.exe --config)"
+      "Bash(./target/release/gx.exe --config)",
+      "Bash(./target/release/gx.exe --dry-run git status)",
+      "Bash(wc -l src/*.rs)",
+      "Bash(./target/release/gx.exe --depth 2 git status)"
     ]
   }
 }

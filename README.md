@@ -103,27 +103,33 @@ gx --dry-run git push
 
 ### Show Configuration
 
-To view your configuration file location and current settings:
+To view all active configuration files and merged settings:
 
 ```bash
 gx --config
 ```
 
-Output example:
+Output example (with project + user configs):
 ```
-📁 Configuration File Location:
-C:\Users\YourUsername\.gx\gx.json
+📁 Active Configuration Files:
+  1. [User] C:\Users\YourUsername\.gx\gx.json
+  2. [Project] .gx/gx.json
 
-📄 Current Configuration:
+📄 Merged Configuration:
 {
   "default_depth": 5,
   "exclude": {
-    "names": ["temp", "logs"],
+    "names": ["temp", "logs", "local-temp"],
     "globs": ["*-backup"],
     "regexes": ["^test-.*$"]
   }
 }
 ```
+
+How it works:
+- User config defines `temp`, `logs` exclusions
+- Project config adds `local-temp` exclusion (merged)
+- `default_depth: 5` comes from project config (overrides user config)
 
 ### Dry-run Mode
 
@@ -215,10 +221,35 @@ Fast-forward
 
 ## Configuration File
 
-`gx` supports a configuration file for customizing default behavior. The config file is automatically created on first run at:
+`gx` supports hierarchical configuration files for flexible customization:
 
-**Windows:** `C:\Users\YourUsername\.gx\gx.json`
-**Linux/Mac:** `~/.gx/gx.json`
+### Configuration Levels
+
+Two configuration levels are supported (higher priority overrides lower):
+
+1. **Project-level config** - `.gx/gx.json` (current directory)
+   - Project-specific settings
+   - Overrides user-level config
+   - Not auto-created (must be created manually)
+
+2. **User-level config** - `~/.gx/gx.json` (home directory)
+   - Global defaults for all projects
+   - Auto-created on first run
+   - Used as fallback
+
+### Configuration Priority
+
+**From highest to lowest:**
+1. Command-line arguments (`--depth`, `--path`)
+2. Project-level config (`.gx/gx.json`)
+3. User-level config (`~/.gx/gx.json`)
+4. Default values (`depth: 3`, empty exclude patterns)
+
+### Configuration Merging Rules
+
+- **Simple values** (like `default_depth`): Higher level overrides lower level
+- **Arrays** (like `exclude.names`): Merged and deduplicated
+- **Objects** (like `exclude`): Recursively merged
 
 ### Configuration Options
 

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Configuration file structure
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -43,7 +43,7 @@ impl Default for Config {
     }
 }
 
-/// Get the configuration file path (cross-platform)
+/// Get the user-level configuration file path (cross-platform)
 pub fn get_config_path() -> Result<PathBuf> {
     let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
     let config_dir = home_dir.join(".gx");
@@ -57,51 +57,105 @@ pub fn get_config_path() -> Result<PathBuf> {
     Ok(config_dir.join("gx.json"))
 }
 
-/// Show configuration file location and contents
-pub fn show_config_info() -> Result<()> {
-    let config_path = get_config_path()?;
+/// Load configuration from a specific file path
+fn load_config_from_path(path: &Path) -> Result<Config> {
+    let content = fs::read_to_string(path)
+        .context(format!("Failed to read config file: {}", path.display()))?;
 
-    println!("📁 Configuration File Location:");
-    println!("{}\n", config_path.display());
+    let config: Config = serde_json::from_str(&content)
+        .context(format!("Failed to parse config file: {}", path.display()))?;
 
-    if config_path.exists() {
-        let content = fs::read_to_string(&config_path)
-            .context("Failed to read config file")?;
-
-        println!("📄 Current Configuration:");
-        println!("{}", content);
-    } else {
-        println!("⚠ Configuration file does not exist yet.");
-        println!("It will be created automatically on first run with default values.");
-    }
-
-    Ok(())
+    Ok(config)
 }
 
-/// Load existing config or create default config file
-pub fn load_or_create_config() -> Result<Config> {
-    let config_path = get_config_path()?;
+/// Merge arrays with deduplication
+fn merge_arrays(base: Vec<String>, override_: Vec<String>) -> Vec<String> {
+    let mut result = base.clone();
+    for item in override_ {
+        if !result.contains(&item) {
+            result.push(item);
+        }
+    }
+    result
+}
 
-    if config_path.exists() {
-        let content = fs::read_to_string(&config_path)
-            .context(format!("Failed to read config file: {}", config_path.display()))?;
+/// Merge two configs (override values take precedence)
+fn merge_configs(base: Config, override_: Config) -> Config {
+    Config {
+        default_depth: override_.default_depth,
+        exclude: ExcludePatterns {
+            names: merge_arrays(base.exclude.names, override_.exclude.names),
+            globs: merge_arrays(base.exclude.globs, override_.exclude.globs),
+            regexes: merge_arrays(base.exclude.regexes, override_.exclude.regexes),
+        },
+    }
+}
 
-        let config: Config = serde_json::from_str(&content)
-            .context(format!("Failed to parse config file: {}", config_path.display()))?;
+/// Load and merge configurations from multiple sources
+/// Returns (merged_config, list_of_loaded_files)
+pub fn load_merged_config() -> Result<(Config, Vec<PathBuf>)> {
+    let mut final_config = Config::default();
+    let mut loaded_files = Vec::new();
 
-        Ok(config)
+    // 1. Load user-level config (base configuration)
+    let user_config_path = get_config_path()?;
+    if user_config_path.exists() {
+        let config = load_config_from_path(&user_config_path)?;
+        final_config = config;
+        loaded_files.push(user_config_path);
     } else {
-        // Create default config file
+        // Create default user config
         let default_config = Config::default();
         let content = serde_json::to_string_pretty(&default_config)
             .context("Failed to serialize default config")?;
 
-        fs::write(&config_path, content)
-            .context(format!("Failed to write config file: {}", config_path.display()))?;
+        fs::write(&user_config_path, content)
+            .context(format!("Failed to write config file: {}", user_config_path.display()))?;
 
-        eprintln!("Created default config file at: {}", config_path.display());
+        eprintln!("Created default config file at: {}", user_config_path.display());
         eprintln!("You can customize it to set default depth and exclude patterns.\n");
 
-        Ok(default_config)
+        loaded_files.push(user_config_path);
     }
+
+    // 2. Load project-level config (overrides user config)
+    let project_config_path = PathBuf::from(".gx/gx.json");
+    if project_config_path.exists() {
+        let config = load_config_from_path(&project_config_path)?;
+        final_config = merge_configs(final_config, config);
+        loaded_files.push(project_config_path);
+    }
+
+    Ok((final_config, loaded_files))
+}
+
+/// Show configuration file location and contents
+pub fn show_config_info() -> Result<()> {
+    let (config, loaded_files) = load_merged_config()?;
+
+    println!("📁 Active Configuration Files:");
+    if loaded_files.is_empty() {
+        println!("  ⚠ No configuration files found");
+    } else {
+        for (i, path) in loaded_files.iter().enumerate() {
+            // Check if it's a relative path starting with "."
+            let is_project = path.is_relative() && path.starts_with(".gx");
+            let level = if is_project { "Project" } else { "User" };
+            println!("  {}. [{}] {}", i + 1, level, path.display());
+        }
+    }
+    println!();
+
+    println!("📄 Merged Configuration:");
+    let content = serde_json::to_string_pretty(&config)?;
+    println!("{}", content);
+
+    Ok(())
+}
+
+/// Load existing config or create default config file (legacy function for backward compatibility)
+#[deprecated(note = "Use load_merged_config() instead")]
+pub fn load_or_create_config() -> Result<Config> {
+    let (config, _) = load_merged_config()?;
+    Ok(config)
 }

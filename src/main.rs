@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use config::{load_or_create_config, show_config_info};
+use config::{load_merged_config, show_config_info};
 use git::{execute_git_command, get_current_branch};
 use collect::collect_git_repos;
 
@@ -52,8 +52,8 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    // Load or create configuration file
-    let config = load_or_create_config()?;
+    // Load and merge configuration files
+    let (config, _loaded_files) = load_merged_config()?;
 
     // Use command line depth if provided, otherwise use config default
     let depth = args.depth.unwrap_or(config.default_depth);
