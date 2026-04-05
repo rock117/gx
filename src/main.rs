@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut, list_shortcuts};
+use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut, list_shortcuts, clear_shortcuts};
 use git::{execute_git_command, get_current_branch, get_repo_status};
 use collect::collect_git_repos;
 
@@ -334,8 +334,11 @@ fn handle_shortcut(args: &[String]) -> Result<()> {
         "list" => {
             list_shortcuts()?;
         }
+        "clear" => {
+            clear_shortcuts()?;
+        }
         other => {
-            anyhow::bail!("Unknown shortcut command '{}'. Use: add, rm, list", other);
+            anyhow::bail!("Unknown shortcut command '{}'. Use: add, rm, list, clear", other);
         }
     }
 

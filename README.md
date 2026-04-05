@@ -36,6 +36,7 @@ gx <command> [OPTIONS]
 | `gx shortcut add <name> "git <cmd>"` | Add a shortcut |
 | `gx shortcut rm <name>` | Remove a shortcut |
 | `gx shortcut list` | List all shortcuts |
+| `gx shortcut clear` | Clear all shortcuts |
 | `gx <shortcut> [args]` | Execute via shortcut name |
 
 ### Options
@@ -94,6 +95,7 @@ gx shortcut add st "git status"
 gx shortcut add co "git checkout"
 gx shortcut list                   # List all shortcuts
 gx shortcut rm st                  # Remove shortcut
+gx shortcut clear                  # Clear all shortcuts
 ```
 
 **Use shortcuts:**

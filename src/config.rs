@@ -217,3 +217,19 @@ pub fn list_shortcuts() -> Result<()> {
     }
     Ok(())
 }
+
+/// Clear all shortcut commands
+pub fn clear_shortcuts() -> Result<()> {
+    let (mut config, _) = load_merged_config()?;
+
+    if config.shortcuts.is_empty() {
+        println!("No shortcuts to clear.");
+        return Ok(());
+    }
+
+    let count = config.shortcuts.len();
+    config.shortcuts.clear();
+    save_user_config(&config)?;
+    println!("\x1b[32mCleared\x1b[0m {} shortcut(s)", count);
+    Ok(())
+}
