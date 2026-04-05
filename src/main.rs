@@ -10,9 +10,23 @@ use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut
 use git::{execute_git_command, get_current_branch, get_repo_status};
 use collect::collect_git_repos;
 
+const SUBCOMMAND_HELP: &str = "\
+Commands:
+  info                   Show overview of all repositories
+  config                 Show configuration file location and contents
+  shortcut <add|rm|list> Manage custom shortcut commands
+  git <cmd> [args]       Execute git command in all repos
+  <shortcut> [args]      Execute via shortcut name
+
+Examples:
+  gx git pull            Pull all repos
+  gx info                Show repo overview
+  gx shortcut add pull \"git pull\"
+  gx pull                Use shortcut to pull all repos";
+
 #[derive(Parser, Debug)]
 #[command(name = "gx")]
-#[command(about = "Execute git commands recursively in all git repositories", long_about = None)]
+#[command(about = "Execute git commands recursively in all git repositories", after_help = SUBCOMMAND_HELP)]
 struct Args {
     /// Maximum directory depth to search (overrides config file)
     #[arg(short, long)]
