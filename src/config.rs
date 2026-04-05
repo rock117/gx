@@ -48,7 +48,6 @@ pub fn get_config_path() -> Result<PathBuf> {
     let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
     let config_dir = home_dir.join(".gx");
 
-    // Create .gx directory if it doesn't exist
     if !config_dir.exists() {
         fs::create_dir_all(&config_dir)
             .context(format!("Failed to create config directory: {}", config_dir.display()))?;
@@ -61,75 +60,68 @@ pub fn get_config_path() -> Result<PathBuf> {
 fn load_config_from_path(path: &Path) -> Result<Config> {
     let content = fs::read_to_string(path)
         .context(format!("Failed to read config file: {}", path.display()))?;
-
     let config: Config = serde_json::from_str(&content)
         .context(format!("Failed to parse config file: {}", path.display()))?;
-
     Ok(config)
 }
 
 /// Merge arrays with deduplication
-fn merge_arrays(base: Vec<String>, override_: Vec<String>) -> Vec<String> {
-    let mut result = base.clone();
+fn merge_arrays(base: &[String], override_: &[String]) -> Vec<String> {
+    let mut result = base.to_vec();
     for item in override_ {
-        if !result.contains(&item) {
-            result.push(item);
+        if !result.contains(item) {
+            result.push(item.clone());
         }
     }
     result
 }
 
-/// Merge two configs (override values take precedence)
-fn merge_configs(base: Config, override_: Config) -> Config {
+/// Merge two configs (override takes precedence)
+fn merge_configs(base: &Config, override_: &Config) -> Config {
     Config {
         default_depth: override_.default_depth,
         exclude: ExcludePatterns {
-            names: merge_arrays(base.exclude.names, override_.exclude.names),
-            globs: merge_arrays(base.exclude.globs, override_.exclude.globs),
-            regexes: merge_arrays(base.exclude.regexes, override_.exclude.regexes),
+            names: merge_arrays(&base.exclude.names, &override_.exclude.names),
+            globs: merge_arrays(&base.exclude.globs, &override_.exclude.globs),
+            regexes: merge_arrays(&base.exclude.regexes, &override_.exclude.regexes),
         },
     }
 }
 
-/// Load and merge configurations from multiple sources
+/// Load and merge configurations from multiple sources.
 /// Returns (merged_config, list_of_loaded_files)
 pub fn load_merged_config() -> Result<(Config, Vec<PathBuf>)> {
     let mut final_config = Config::default();
     let mut loaded_files = Vec::new();
 
-    // 1. Load user-level config (base configuration)
+    // 1. User-level config
     let user_config_path = get_config_path()?;
     if user_config_path.exists() {
         let config = load_config_from_path(&user_config_path)?;
         final_config = config;
         loaded_files.push(user_config_path);
     } else {
-        // Create default user config
-        let default_config = Config::default();
-        let content = serde_json::to_string_pretty(&default_config)
+        let content = serde_json::to_string_pretty(&final_config)
             .context("Failed to serialize default config")?;
-
         fs::write(&user_config_path, content)
             .context(format!("Failed to write config file: {}", user_config_path.display()))?;
-
         eprintln!("Created default config file at: {}", user_config_path.display());
         eprintln!("You can customize it to set default depth and exclude patterns.\n");
-
         loaded_files.push(user_config_path);
     }
 
-    // 2. Load project-level config (overrides user config)
+    // 2. Project-level config (overrides user config)
     let project_config_path = PathBuf::from(".gx/gx.json");
     if project_config_path.exists() {
         let config = load_config_from_path(&project_config_path)?;
-        final_config = merge_configs(final_config, config);
+        final_config = merge_configs(&final_config, &config);
         loaded_files.push(project_config_path);
     }
 
     Ok((final_config, loaded_files))
 }
 
-/// Show configuration file location and contents
+/// Show all active configuration files and merged result
 pub fn show_config_info() -> Result<()> {
     let (config, loaded_files) = load_merged_config()?;
 
@@ -138,7 +130,6 @@ pub fn show_config_info() -> Result<()> {
         println!("  ⚠ No configuration files found");
     } else {
         for (i, path) in loaded_files.iter().enumerate() {
-            // Check if it's a relative path starting with "."
             let is_project = path.is_relative() && path.starts_with(".gx");
             let level = if is_project { "Project" } else { "User" };
             println!("  {}. [{}] {}", i + 1, level, path.display());
@@ -152,4 +143,3 @@ pub fn show_config_info() -> Result<()> {
 
     Ok(())
 }
-

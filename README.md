@@ -7,186 +7,133 @@ A command-line tool that recursively executes git commands across all git reposi
 - 🔍 Recursively search for git repositories in current directory and subdirectories
 - 🎯 Execute git commands in all found repositories
 - 🌲 Display current branch name for each repository
+- 🔧 Filter repositories by branch name
 - ⚙️ Configurable search depth (default: 3 levels)
 - 🚀 Skip common non-project directories (node_modules, target, vendor, etc.)
 - 📝 Support for complete git commands with arguments
 - 🔮 Dry-run mode to preview operations without executing
+- 🛡️ Ignore errors option to continue on failure
 - 📊 Progress indicators and execution statistics
+- 🐚 Shell auto-completion (bash, zsh, fish, powershell, elvish)
+- ⚙️ Hierarchical configuration files (project + user level)
 
 ## Usage
 
 ### Basic Syntax
 
 ```bash
-gx [OPTIONS] <command> [args...]
+gx [OPTIONS] git <command> [args...]
 ```
 
 ### Examples
 
-**Pull all repositories (current directory, depth 3):**
+**Pull all repositories:**
 ```bash
-gx pull
+gx git pull
 ```
 
 **Pull with specified depth (5 levels):**
 ```bash
-gx --depth 5 pull
+gx --depth 5 git pull
 ```
 
 **Pull from specific remote and branch:**
 ```bash
-gx pull origin main
+gx git pull origin main
 ```
 
 **Check status of all repositories:**
 ```bash
-gx status
+gx git status
 ```
 
 **Fetch from all remotes:**
 ```bash
-gx fetch --all
+gx git fetch --all
 ```
 
 **Specify starting directory:**
 ```bash
-gx --path /path/to/projects pull
+gx --path /path/to/projects git pull
 ```
 
 **Show last commit in each repository:**
 ```bash
-gx log -1 --oneline
+gx git log -1 --oneline
 ```
 
-**Preview what would be done without executing (dry-run):**
+**Only execute in repositories on a specific branch:**
 ```bash
-gx --dry-run push
+gx --branch main git pull
+```
+
+**Ignore errors and continue execution:**
+```bash
+gx --ignore-errors git push
+```
+
+**Preview without executing (dry-run):**
+```bash
+gx --dry-run git push
+```
+
+**View configuration:**
+```bash
+gx --config
+```
+
+**Generate shell completions:**
+```bash
+gx --completions bash
 ```
 
 ### gx vs git
 
-`gx` uses the same arguments as `git`, just remove the `git` prefix:
+`gx` uses the same arguments as `git`, just replace `git` with `gx git`:
 
-| git command | gx command |
-|---|---|
-| `git pull` | `gx pull` |
-| `git push` | `gx push` |
-| `git status` | `gx status` |
-| `git fetch --all` | `gx fetch --all` |
-| `git pull origin main` | `gx pull origin main` |
-| `git branch -a` | `gx branch -a` |
-| `git log -1 --oneline` | `gx log -1 --oneline` |
-| `git diff --stat` | `gx diff --stat` |
-
-**Key difference:** `gx` executes the command recursively across **all** git repositories in the current directory tree, while `git` only operates on the current repository.
+| git | gx | Description |
+|---|---|---|
+| `git pull` | `gx git pull` | Pull all repos |
+| `git push` | `gx git push` | Push all repos |
+| `git status` | `gx git status` | Status of all repos |
+| `git fetch --all` | `gx git fetch --all` | Fetch all remotes |
+| `git branch -a` | `gx git branch -a` | List all branches |
+| `git log -1 --oneline` | `gx git log -1 --oneline` | Last commit |
+| `git diff --stat` | `gx git diff --stat` | Diff stats |
+| - | `gx --branch main git pull` | Pull only `main` branch repos |
+| - | `gx --dry-run git push` | Preview without executing |
+| - | `gx --ignore-errors git push` | Continue on error |
+| - | `gx --config` | View configuration |
+| - | `gx --completions bash` | Generate completions |
 
 ### Options
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--depth` | `-d` | Maximum directory depth to search | `3` |
-| `--path` | `-p` | Starting directory (absolute or relative path) | Current directory |
-| `--config` | - | Show configuration file location and contents | - |
-| `--dry-run` | - | Show what would be done without executing | - |
+| `--path` | `-p` | Starting directory | Current directory |
+| `--branch` | | Only execute in repos matching this branch | - |
+| `--dry-run` | | Show what would be done without executing | - |
+| `--ignore-errors` | | Continue execution when a repo fails | Stop on first error |
+| `--config` | | Show configuration file location and contents | - |
+| `--completions` | | Generate shell completion script | - |
 | `--help` | `-h` | Show help message | - |
 
 ### Passing Options to Git
 
-If you need to pass options that conflict with gx options (like `-h`, `--help`), use `--` as a separator:
+If you need to pass options that conflict with gx options (like `-h`), use `--` as a separator:
 
 ```bash
 # Show git help (not gx help)
-gx -- -h
-gx -- --help
+gx -- git -h
 ```
 
-| gx command | behavior |
+| Command | Behavior |
 |---|---|
 | `gx -h` | Show gx help |
-| `gx -- -h` | Pass `-h` to git |
-| `gx -- --help` | Pass `--help` to git |
+| `gx -- git -h` | Pass `-h` to git |
 
-### Show Configuration
-
-To view all active configuration files and merged settings:
-
-```bash
-gx --config
-```
-
-Output example (with project + user configs):
-```
-📁 Active Configuration Files:
-  1. [User] C:\Users\YourUsername\.gx\gx.json
-  2. [Project] .gx/gx.json
-
-📄 Merged Configuration:
-{
-  "default_depth": 5,
-  "exclude": {
-    "names": ["temp", "logs", "local-temp"],
-    "globs": ["*-backup"],
-    "regexes": ["^test-.*$"]
-  }
-}
-```
-
-How it works:
-- User config defines `temp`, `logs` exclusions
-- Project config adds `local-temp` exclusion (merged)
-- `default_depth: 5` comes from project config (overrides user config)
-
-### Dry-run Mode
-
-Preview what would be done without actually executing commands:
-
-```bash
-gx --dry-run push
-```
-
-Output example:
-```
-[DRY RUN] Showing what would be done without executing
-
-Found 2 git repository(ies):
-  📁 ./repo1 => main
-  📁 ./repo2 => dev
-
-[1/2] 📁 ./repo1 => main
-  [DRY RUN] Would execute: git push in ./repo1
-[2/2] 📁 ./repo2 => dev
-  [DRY RUN] Would execute: git push in ./repo2
-
-[DRY RUN] Summary: 2 repositories would be affected
-```
-
-**Use cases for dry-run:**
-- 🔍 **Preview impact** - See which repositories will be affected
-- ⚠️ **Safety check** - Avoid accidental destructive operations
-- 🔧 **Debug configuration** - Verify exclusion patterns are working
-- 📊 **Performance estimate** - Know how many repos will be processed
-
-```bash
-gx --config
-```
-
-Output example:
-```
-📁 Configuration File Location:
-C:\Users\YourUsername\.gx\gx.json
-
-📄 Current Configuration:
-{
-  "default_depth": 5,
-  "exclude": {
-    "names": ["temp", "logs"],
-    "globs": ["*-backup"],
-    "regexes": ["^test-.*$"]
-  }
-}
-```
-
-### Output
+## Output
 
 The tool displays:
 - 🔍 Search directory and depth
@@ -198,7 +145,7 @@ The tool displays:
 
 Example output:
 ```
-Searching for git repositories in: C:\Users\projects
+Searching for git repositories in: ./projects
 Max depth: 3
 Command: git pull
 
@@ -254,7 +201,6 @@ Two configuration levels are supported (higher priority overrides lower):
 
 - **Simple values** (like `default_depth`): Higher level overrides lower level
 - **Arrays** (like `exclude.names`): Merged and deduplicated
-- **Objects** (like `exclude`): Recursively merged
 
 ### Configuration Options
 
@@ -276,45 +222,26 @@ Two configuration levels are supported (higher priority overrides lower):
   - Can be overridden with `--depth` option
 
 - **`exclude`** (object)
-  - **`names`** (array of strings): Directory names to exclude
+  - **`names`** (array of strings): Directory names or full paths to exclude
   - **`globs`** (array of strings): Glob patterns for path matching
   - **`regexes`** (array of strings): Regular expression patterns
 
 #### Exclusion Pattern Examples
 
-**Exclude by directory name:**
+**Exclude by directory name or full path:**
 ```json
 {
   "exclude": {
-    "names": ["build", "dist", "coverage"]
+    "names": ["build", "C:/Users/Name/temp", "projects/archive"]
   }
 }
 ```
-
-**Exclude by full path:**
-```json
-{
-  "exclude": {
-    "names": [
-      "C:/Users/Name/temp",
-      "/home/user/projects/old-project",
-      "projects/archive"
-    ]
-  }
-}
-```
-
-**Note:** The `names` field supports both directory names and full/relative paths. Path matching works with both `/` and `\` separators on all platforms.
 
 **Exclude by glob patterns:**
 ```json
 {
   "exclude": {
-    "globs": [
-      "*-backup",
-      "archive/*",
-      "*/.backup/*"
-    ]
+    "globs": ["*-backup", "archive/*", "*/.backup/*"]
   }
 }
 ```
@@ -323,36 +250,9 @@ Two configuration levels are supported (higher priority overrides lower):
 ```json
 {
   "exclude": {
-    "regexes": [
-      "^test-",
-      ".*-temp$",
-      "\\d+-backup"
-    ]
+    "regexes": ["^test-", ".*-temp$", "\\d+-backup"]
   }
 }
-```
-
-**Combined example:**
-```json
-{
-  "default_depth": 5,
-  "exclude": {
-    "names": ["node_modules", "target", ".venv"],
-    "globs": ["*-old", "deprecated/*"],
-    "regexes": ["^backup-.*$", ".*-test$"]
-  }
-}
-```
-
-### Priority
-
-Command line options take precedence over config file settings:
-```bash
-# Uses depth from config file
-gx pull
-
-# Overrides config file depth
-gx --depth 10 pull
 ```
 
 ## Built-in Exclusions
@@ -370,10 +270,24 @@ The tool automatically skips these directories (in addition to your config):
 - `tmp`
 - `temp`
 
+## Shell Completion
+
+Generate completion scripts for your shell:
+
+```bash
+# Bash
+gx --completions bash >> ~/.local/share/bash-completion/completions/gx
+
+# Zsh
+gx --completions zsh > ~/.zfunc/_gx
+
+# Fish
+gx --completions fish > ~/.config/fish/completions/gx.fish
+
+# PowerShell
+gx --completions powershell >> $PROFILE
+```
+
 ## License
 
 This project is open source and available under the MIT License.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
