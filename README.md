@@ -12,7 +12,7 @@ A command-line tool that recursively executes git commands across all git reposi
 - 🚀 Skip common non-project directories (node_modules, target, vendor, etc.)
 - 📝 Support for complete git commands with arguments
 - 🔮 Dry-run mode to preview operations without executing
-- 🛡️ Ignore errors option to continue on failure
+- 🛡️ Continue on error by default, `--stop-on-error` to halt
 - 📊 Progress indicators and execution statistics
 - 📋 Repository info view (branch, status, ahead/behind)
 - ⚡ Custom shortcut commands (add, remove, list)
@@ -46,7 +46,7 @@ gx <command> [OPTIONS]
 | `--path` | `-p` | Starting directory | Current directory |
 | `--branch` | | Only execute in repos matching this branch | - |
 | `--dry-run` | | Show what would be done without executing | - |
-| `--ignore-errors` | | Continue execution when a repo fails | Stop on first error |
+| `--stop-on-error` | | Stop on first error (default: continue on error) | Continue on error |
 | `--help` | `-h` | Show help message | - |
 
 Options can be used with any command. For example:
@@ -77,7 +77,7 @@ gx --depth 5 git pull              # Custom search depth
 gx --path /path/to/projects git pull  # Custom starting directory
 gx --branch main git pull          # Only repos on main branch
 gx --dry-run git push              # Preview without executing
-gx --ignore-errors git push        # Continue on error
+gx --stop-on-error git push        # Stop on first error
 ```
 
 **Repository info:**
@@ -122,7 +122,7 @@ gx config
 | - | `gx info` | Show all repos info |
 | - | `gx --branch main git pull` | Pull only `main` branch repos |
 | - | `gx --dry-run git push` | Preview without executing |
-| - | `gx --ignore-errors git push` | Continue on error |
+| - | `gx --stop-on-error git push` | Stop on first error |
 | - | `gx pull` | Use custom shortcut |
 | - | `gx config` | View configuration |
 
