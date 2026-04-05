@@ -63,6 +63,23 @@ gx log -1 --oneline
 gx --dry-run push
 ```
 
+### gx vs git
+
+`gx` uses the same arguments as `git`, just remove the `git` prefix:
+
+| git command | gx command |
+|---|---|
+| `git pull` | `gx pull` |
+| `git push` | `gx push` |
+| `git status` | `gx status` |
+| `git fetch --all` | `gx fetch --all` |
+| `git pull origin main` | `gx pull origin main` |
+| `git branch -a` | `gx branch -a` |
+| `git log -1 --oneline` | `gx log -1 --oneline` |
+| `git diff --stat` | `gx diff --stat` |
+
+**Key difference:** `gx` executes the command recursively across **all** git repositories in the current directory tree, while `git` only operates on the current repository.
+
 ### Options
 
 | Option | Short | Description | Default |
@@ -108,7 +125,7 @@ How it works:
 Preview what would be done without actually executing commands:
 
 ```bash
-gx --dry-run git push
+gx --dry-run push
 ```
 
 Output example:
