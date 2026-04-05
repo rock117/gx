@@ -15,7 +15,14 @@
       "Bash(./target/release/gx.exe --config)",
       "Bash(./target/release/gx.exe --dry-run git status)",
       "Bash(wc -l src/*.rs)",
-      "Bash(./target/release/gx.exe --depth 2 git status)"
+      "Bash(./target/release/gx.exe --depth 2 git status)",
+      "Bash(./target/release/gx.exe pull:*)",
+      "Bash(./target/release/gx.exe branch:*)",
+      "Bash(./target/release/gx.exe -h)",
+      "Bash(./target/release/gx.exe --completions bash)",
+      "Bash(./target/release/gx.exe --branch main git status)",
+      "Bash(./target/release/gx.exe --overview --depth 2)",
+      "Bash(./target/release/gx.exe --info --depth 2)"
     ]
   }
 }
