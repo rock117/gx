@@ -3,44 +3,12 @@ mod collect;
 mod git;
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser, ValueEnum};
-use clap_complete::{generate, Shell};
+use clap::Parser;
 use std::path::PathBuf;
 
 use config::{load_merged_config, show_config_info};
 use git::{execute_git_command, get_current_branch, get_repo_status};
 use collect::collect_git_repos;
-
-/// Common git subcommands for shell completion
-#[derive(Debug, Clone, ValueEnum)]
-enum GitCommand {
-    Add,
-    Bisect,
-    Branch,
-    Checkout,
-    CherryPick,
-    Clone,
-    Commit,
-    Diff,
-    Fetch,
-    Grep,
-    Init,
-    Log,
-    Merge,
-    Mv,
-    Pull,
-    Push,
-    Rebase,
-    Reset,
-    Restore,
-    Revert,
-    Rm,
-    Show,
-    Stash,
-    Status,
-    Switch,
-    Tag,
-}
 
 #[derive(Parser, Debug)]
 #[command(name = "gx")]
@@ -74,12 +42,8 @@ struct Args {
     #[arg(long)]
     info: bool,
 
-    /// Generate shell completion script (bash, zsh, fish, powershell, elvish)
-    #[arg(long, value_name = "SHELL")]
-    completions: Option<String>,
-
     /// Git command and arguments (e.g., "git pull origin main")
-    #[arg(required_unless_present_any = ["config", "completions", "info"], num_args = 1.., allow_hyphen_values = true)]
+    #[arg(required_unless_present_any = ["config", "info"], num_args = 1.., allow_hyphen_values = true)]
     git_args: Vec<String>,
 }
 
@@ -92,12 +56,6 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = Args::parse();
-
-    // Handle --completions
-    if let Some(shell) = args.completions {
-        print_completions(&shell)?;
-        return Ok(());
-    }
 
     // Handle --config flag
     if args.config {
@@ -232,27 +190,6 @@ fn run() -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-fn print_completions(shell: &str) -> Result<()> {
-    let shell_type = match shell {
-        "bash" => Shell::Bash,
-        "zsh" => Shell::Zsh,
-        "fish" => Shell::Fish,
-        "powershell" | "powershell.exe" | "ps1" => Shell::PowerShell,
-        "elvish" => Shell::Elvish,
-        _ => anyhow::bail!(
-            "Unknown shell '{}'. Supported: bash, zsh, fish, powershell, elvish",
-            shell
-        ),
-    };
-    generate(
-        shell_type,
-        &mut Args::command(),
-        "gx",
-        &mut std::io::stdout(),
-    );
     Ok(())
 }
 

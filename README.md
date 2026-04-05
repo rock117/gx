@@ -15,7 +15,6 @@ A command-line tool that recursively executes git commands across all git reposi
 - 🛡️ Ignore errors option to continue on failure
 - 📊 Progress indicators and execution statistics
 - 📋 Repository info view (branch, status, ahead/behind)
-- 🐚 Shell auto-completion (bash, zsh, fish, powershell, elvish)
 - ⚙️ Hierarchical configuration files (project + user level)
 
 ## Usage
@@ -88,11 +87,6 @@ gx --info
 gx --config
 ```
 
-**Generate shell completions:**
-```bash
-gx --completions bash
-```
-
 ### gx vs git
 
 `gx` uses the same arguments as `git`, just replace `git` with `gx git`:
@@ -111,7 +105,6 @@ gx --completions bash
 | - | `gx --info` | Show all repos info |
 | - | `gx --ignore-errors git push` | Continue on error |
 | - | `gx --config` | View configuration |
-| - | `gx --completions bash` | Generate completions |
 
 ### Options
 
@@ -124,7 +117,6 @@ gx --completions bash
 | `--ignore-errors` | | Continue execution when a repo fails | Stop on first error |
 | `--info` | | Show info of all repos (branch, status, ahead/behind) | - |
 | `--config` | | Show configuration file location and contents | - |
-| `--completions` | | Generate shell completion script | - |
 | `--help` | `-h` | Show help message | - |
 
 ### Passing Options to Git
@@ -301,24 +293,6 @@ The tool automatically skips these directories (in addition to your config):
 - `cache`
 - `tmp`
 - `temp`
-
-## Shell Completion
-
-Generate completion scripts for your shell:
-
-```bash
-# Bash
-gx --completions bash >> ~/.local/share/bash-completion/completions/gx
-
-# Zsh
-gx --completions zsh > ~/.zfunc/_gx
-
-# Fish
-gx --completions fish > ~/.config/fish/completions/gx.fish
-
-# PowerShell
-gx --completions powershell >> $PROFILE
-```
 
 ## License
 
