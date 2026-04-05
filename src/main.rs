@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use config::{load_merged_config, show_config_info};
+use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut, list_shortcuts};
 use git::{execute_git_command, get_current_branch, get_repo_status};
 use collect::collect_git_repos;
 
@@ -72,19 +72,41 @@ fn run() -> Result<()> {
     // Load and merge configuration files
     let (config, _loaded_files) = load_merged_config()?;
 
-    // Use command line depth if provided, otherwise use config default
-    let depth = args.depth.unwrap_or(config.default_depth);
-    let start_dir = args.path.unwrap_or_else(|| PathBuf::from("."));
+    // Handle shortcut management commands
+    if !args.git_args.is_empty() && args.git_args[0] == "shortcut" {
+        handle_shortcut(&args.git_args[1..])?;
+        return Ok(());
+    }
+
+    // Resolve shortcut or validate git command
+    let resolved_args = if !args.git_args.is_empty() && args.git_args[0] != "git" {
+        if let Some(full_cmd) = config.shortcuts.get(&args.git_args[0]) {
+            // Expand shortcut: "pull" + ["origin", "main"] → ["git", "pull", "origin", "main"]
+            let mut expanded: Vec<String> = full_cmd.split_whitespace().map(String::from).collect();
+            expanded.extend_from_slice(&args.git_args[1..]);
+            expanded
+        } else {
+            anyhow::bail!(
+                "Unknown command or shortcut '{}'. Usage: gx git <command> or gx <shortcut>",
+                args.git_args[0]
+            );
+        }
+    } else {
+        args.git_args.clone()
+    };
 
     // Validate that first argument is "git"
-    if args.git_args.is_empty() || args.git_args[0] != "git" {
+    if resolved_args.is_empty() || resolved_args[0] != "git" {
         anyhow::bail!("First argument must be 'git'. Usage: gx git <command> [args]");
     }
 
-    let git_cmd = &args.git_args[1..];
+    let git_cmd = &resolved_args[1..];
     if git_cmd.is_empty() {
         anyhow::bail!("Missing git command. Usage: gx git <command> [args]");
     }
+
+    let depth = args.depth.unwrap_or(config.default_depth);
+    let start_dir = args.path.unwrap_or_else(|| PathBuf::from("."));
 
     println!("Searching for git repositories in: {}", start_dir.display());
     println!("Max depth: {}", depth);
@@ -289,6 +311,35 @@ fn show_info(args: &Args) -> Result<()> {
     if ahead_count > 0 { print!(" | \x1b[32m{} ahead\x1b[0m", ahead_count); }
     if behind_count > 0 { print!(" | \x1b[31m{} behind\x1b[0m", behind_count); }
     println!();
+
+    Ok(())
+}
+
+fn handle_shortcut(args: &[String]) -> Result<()> {
+    if args.is_empty() {
+        anyhow::bail!("Usage: gx shortcut <add|rm|list> [args]");
+    }
+
+    match args[0].as_str() {
+        "add" => {
+            if args.len() < 3 {
+                anyhow::bail!("Usage: gx shortcut add <name> \"git <command>\"");
+            }
+            add_shortcut(&args[1], &args[2..].join(" "))?;
+        }
+        "rm" => {
+            if args.len() < 2 {
+                anyhow::bail!("Usage: gx shortcut rm <name>");
+            }
+            remove_shortcut(&args[1])?;
+        }
+        "list" => {
+            list_shortcuts()?;
+        }
+        other => {
+            anyhow::bail!("Unknown shortcut command '{}'. Use: add, rm, list", other);
+        }
+    }
 
     Ok(())
 }

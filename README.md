@@ -15,6 +15,7 @@ A command-line tool that recursively executes git commands across all git reposi
 - 🛡️ Ignore errors option to continue on failure
 - 📊 Progress indicators and execution statistics
 - 📋 Repository info view (branch, status, ahead/behind)
+- ⚡ Custom shortcut commands (add, remove, list)
 - ⚙️ Hierarchical configuration files (project + user level)
 
 ## Usage
@@ -87,6 +88,26 @@ gx --info
 gx --config
 ```
 
+**Use a shortcut command:**
+```bash
+# After adding shortcut: gx shortcut add pull "git pull"
+gx pull              # equivalent to: gx git pull
+gx pull origin main  # equivalent to: gx git pull origin main
+```
+
+**Manage shortcuts:**
+```bash
+# Add a shortcut
+gx shortcut add pull "git pull"
+gx shortcut add st "git status"
+
+# List all shortcuts
+gx shortcut list
+
+# Remove a shortcut
+gx shortcut rm st
+```
+
 ### gx vs git
 
 `gx` uses the same arguments as `git`, just replace `git` with `gx git`:
@@ -101,9 +122,11 @@ gx --config
 | `git log -1 --oneline` | `gx git log -1 --oneline` | Last commit |
 | `git diff --stat` | `gx git diff --stat` | Diff stats |
 | - | `gx --branch main git pull` | Pull only `main` branch repos |
-| | - | `gx --dry-run git push` | Preview without executing |
+| - | `gx --dry-run git push` | Preview without executing |
 | - | `gx --info` | Show all repos info |
 | - | `gx --ignore-errors git push` | Continue on error |
+| - | `gx pull` (shortcut) | Use custom shortcut |
+| - | `gx shortcut list` | List all shortcuts |
 | - | `gx --config` | View configuration |
 
 ### Options
@@ -225,6 +248,7 @@ Two configuration levels are supported (higher priority overrides lower):
 
 - **Simple values** (like `default_depth`): Higher level overrides lower level
 - **Arrays** (like `exclude.names`): Merged and deduplicated
+- **Shortcuts** (like `shortcuts`): Merged, project-level overrides user-level for same name
 
 ### Configuration Options
 
@@ -235,6 +259,12 @@ Two configuration levels are supported (higher priority overrides lower):
     "names": ["temp", "logs"],
     "globs": ["*-backup", "archive/*"],
     "regexes": ["^test-.*$", ".*-temp$"]
+  },
+  "shortcuts": {
+    "pull": "git pull",
+    "push": "git push",
+    "st": "git status",
+    "co": "git checkout"
   }
 }
 ```
@@ -249,6 +279,11 @@ Two configuration levels are supported (higher priority overrides lower):
   - **`names`** (array of strings): Directory names or full paths to exclude
   - **`globs`** (array of strings): Glob patterns for path matching
   - **`regexes`** (array of strings): Regular expression patterns
+
+- **`shortcuts`** (object, key-value pairs)
+  - Key is the shortcut name, value is the full command to expand
+  - Can be managed via CLI: `gx shortcut add/rm/list`
+  - Example: `"pull": "git pull"` allows `gx pull` instead of `gx git pull`
 
 #### Exclusion Pattern Examples
 

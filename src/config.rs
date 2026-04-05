@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,10 @@ pub struct Config {
     /// Directories/patterns to exclude from search
     #[serde(default)]
     pub exclude: ExcludePatterns,
+
+    /// Custom shortcut commands
+    #[serde(default)]
+    pub shortcuts: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -39,6 +44,7 @@ impl Default for Config {
         Config {
             default_depth: 3,
             exclude: ExcludePatterns::default(),
+            shortcuts: BTreeMap::new(),
         }
     }
 }
@@ -78,6 +84,11 @@ fn merge_arrays(base: &[String], override_: &[String]) -> Vec<String> {
 
 /// Merge two configs (override takes precedence)
 fn merge_configs(base: &Config, override_: &Config) -> Config {
+    let mut shortcuts = base.shortcuts.clone();
+    for (k, v) in &override_.shortcuts {
+        shortcuts.insert(k.clone(), v.clone());
+    }
+
     Config {
         default_depth: override_.default_depth,
         exclude: ExcludePatterns {
@@ -85,6 +96,7 @@ fn merge_configs(base: &Config, override_: &Config) -> Config {
             globs: merge_arrays(&base.exclude.globs, &override_.exclude.globs),
             regexes: merge_arrays(&base.exclude.regexes, &override_.exclude.regexes),
         },
+        shortcuts,
     }
 }
 
@@ -141,5 +153,67 @@ pub fn show_config_info() -> Result<()> {
     let content = serde_json::to_string_pretty(&config)?;
     println!("{}", content);
 
+    Ok(())
+}
+
+/// Save config to user-level config file
+fn save_user_config(config: &Config) -> Result<()> {
+    let config_path = get_config_path()?;
+    let content = serde_json::to_string_pretty(config)
+        .context("Failed to serialize config")?;
+    fs::write(&config_path, content)
+        .context(format!("Failed to write config file: {}", config_path.display()))?;
+    Ok(())
+}
+
+/// Add a shortcut command
+pub fn add_shortcut(name: &str, command: &str) -> Result<()> {
+    let (mut config, _) = load_merged_config()?;
+
+    // Validate command starts with "git"
+    if !command.starts_with("git ") {
+        anyhow::bail!("Shortcut command must start with 'git'. Example: 'git pull'");
+    }
+
+    let existed = config.shortcuts.contains_key(name);
+    config.shortcuts.insert(name.to_string(), command.to_string());
+    save_user_config(&config)?;
+
+    if existed {
+        println!("\x1b[33mUpdated\x1b[0m shortcut: \x1b[36m{}\x1b[0m → {}", name, command);
+    } else {
+        println!("\x1b[32mAdded\x1b[0m shortcut: \x1b[36m{}\x1b[0m → {}", name, command);
+    }
+    Ok(())
+}
+
+/// Remove a shortcut command
+pub fn remove_shortcut(name: &str) -> Result<()> {
+    let (mut config, _) = load_merged_config()?;
+
+    if config.shortcuts.remove(name).is_some() {
+        save_user_config(&config)?;
+        println!("\x1b[32mRemoved\x1b[0m shortcut: \x1b[36m{}\x1b[0m", name);
+    } else {
+        anyhow::bail!("Shortcut '{}' not found", name);
+    }
+    Ok(())
+}
+
+/// List all shortcut commands
+pub fn list_shortcuts() -> Result<()> {
+    let (config, _) = load_merged_config()?;
+
+    if config.shortcuts.is_empty() {
+        println!("No shortcuts defined.");
+        println!("Add one with: gx shortcut add <name> \"git <command>\"");
+        return Ok(());
+    }
+
+    println!("\x1b[1mShortcuts:\x1b[0m");
+    let max_name_len = config.shortcuts.keys().map(|k| k.len()).max().unwrap_or(10);
+    for (name, command) in &config.shortcuts {
+        println!("  \x1b[36m{:<width$}\x1b[0m  {}", name, command, width = max_name_len);
+    }
     Ok(())
 }
