@@ -46,49 +46,49 @@ sudo cp target/release/gx /usr/local/bin/
 ### Basic Syntax
 
 ```bash
-gx [OPTIONS] git <command> [args...]
+gx [OPTIONS] <command> [args...]
 ```
 
 ### Examples
 
 **Pull all repositories (current directory, depth 3):**
 ```bash
-gx git pull
+gx pull
 ```
 
 **Pull with specified depth (5 levels):**
 ```bash
-gx --depth 5 git pull
+gx --depth 5 pull
 ```
 
 **Pull from specific remote and branch:**
 ```bash
-gx git pull origin main
+gx pull origin main
 ```
 
 **Check status of all repositories:**
 ```bash
-gx git status
+gx status
 ```
 
 **Fetch from all remotes:**
 ```bash
-gx git fetch --all
+gx fetch --all
 ```
 
 **Specify starting directory:**
 ```bash
-gx --path /path/to/projects git pull
+gx --path /path/to/projects pull
 ```
 
 **Show last commit in each repository:**
 ```bash
-gx git log -1 --oneline
+gx log -1 --oneline
 ```
 
 **Preview what would be done without executing (dry-run):**
 ```bash
-gx --dry-run git push
+gx --dry-run push
 ```
 
 ### Options
@@ -344,10 +344,10 @@ Two configuration levels are supported (higher priority overrides lower):
 Command line options take precedence over config file settings:
 ```bash
 # Uses depth from config file
-gx git pull
+gx pull
 
 # Overrides config file depth
-gx --depth 10 git pull
+gx --depth 10 pull
 ```
 
 ## Built-in Exclusions

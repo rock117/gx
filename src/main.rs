@@ -31,7 +31,7 @@ struct Args {
     #[arg(long)]
     dry_run: bool,
 
-    /// Git command and arguments (e.g., "git pull origin main")
+    /// Git subcommand and arguments (e.g., "pull origin main")
     #[arg(required_unless_present = "config", num_args = 1.., allow_hyphen_values = true)]
     git_args: Vec<String>,
 }
@@ -59,15 +59,12 @@ fn run() -> Result<()> {
     let depth = args.depth.unwrap_or(config.default_depth);
     let start_dir = args.path.unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    // Validate that first argument is "git"
-    if args.git_args.is_empty() || args.git_args[0] != "git" {
-        anyhow::bail!("First argument must be 'git'. Usage: gx git <command> [args]");
+    // git_args are passed directly as git subcommand arguments
+    if args.git_args.is_empty() {
+        anyhow::bail!("Missing command. Usage: gx <command> [args]");
     }
 
-    let git_cmd = &args.git_args[1..];
-    if git_cmd.is_empty() {
-        anyhow::bail!("Missing git command. Usage: gx git <command> [args]");
-    }
+    let git_cmd = &args.git_args[..];
 
     println!("Searching for git repositories in: {}", start_dir.display());
     println!("Max depth: {}", depth);
