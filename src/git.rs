@@ -151,7 +151,7 @@ pub fn get_latest_commit(repo_dir: &Path) -> Option<CommitInfo> {
 /// Get the N latest commits of a git repository
 pub fn get_commits(repo_dir: &Path, n: usize) -> Vec<CommitInfo> {
     let output = std::process::Command::new("git")
-        .args(["log", &format!("-{}", n), "--format=%h|%an|%ar|%s"])
+        .args(["log", &format!("-{}", n), "--format=%h|%an|%ad|%s", "--date=format:%Y-%m-%d %H:%M"])
         .current_dir(repo_dir)
         .output()
         .ok();
