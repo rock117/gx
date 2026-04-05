@@ -13,34 +13,6 @@ A command-line tool that recursively executes git commands across all git reposi
 - 🔮 Dry-run mode to preview operations without executing
 - 📊 Progress indicators and execution statistics
 
-## Installation
-
-### Build from source
-
-```bash
-# Clone or navigate to the project directory
-cd gx
-
-# Build the project
-cargo build --release
-
-# The binary will be at: ./target/release/gx.exe (Windows) or ./target/release/gx (Linux/Mac)
-```
-
-### Add to PATH
-
-**Windows:**
-```powershell
-# Copy to a directory in your PATH, e.g.:
-copy target\release\gx.exe C:\Users\YourName\.cargo\bin\
-```
-
-**Linux/Mac:**
-```bash
-# Copy to a directory in your PATH, e.g.:
-sudo cp target/release/gx /usr/local/bin/
-```
-
 ## Usage
 
 ### Basic Syntax
@@ -364,24 +336,6 @@ The tool automatically skips these directories (in addition to your config):
 - `cache`
 - `tmp`
 - `temp`
-
-## Requirements
-
-- Rust 1.93.1 or later (for building)
-- Git (installed and available in PATH)
-
-## Building
-
-```bash
-# Development build
-cargo build
-
-# Release build (optimized)
-cargo build --release
-
-# Run tests
-cargo test
-```
 
 ## License
 
