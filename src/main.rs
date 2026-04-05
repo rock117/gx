@@ -44,9 +44,9 @@ struct Args {
     #[arg(long)]
     branch: Option<String>,
 
-    /// Ignore errors from individual repositories, continue execution
+    /// Stop on first error (default: continue on error)
     #[arg(long)]
-    ignore_errors: bool,
+    stop_on_error: bool,
 
     /// Subcommand and arguments
     #[arg(num_args = 1.., allow_hyphen_values = true)]
@@ -185,9 +185,9 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
                 Ok(_) => succeeded += 1,
                 Err(_) => {
                     failed += 1;
-                    if !args.ignore_errors {
+                    if args.stop_on_error {
                         println!();
-                        println!("\x1b[31m✗ Stopped at {} (use --ignore-errors to continue)\x1b[0m",
+                        println!("\x1b[31m✗ Stopped at {} (default: continue on error, use --stop-on-error to stop)\x1b[0m",
                             repo.display());
                         break;
                     }
