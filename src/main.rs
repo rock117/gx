@@ -22,10 +22,6 @@ struct Args {
     #[arg(short, long)]
     path: Option<PathBuf>,
 
-    /// Show configuration file location and contents
-    #[arg(long)]
-    config: bool,
-
     /// Show what would be done without actually executing
     #[arg(long)]
     dry_run: bool,
@@ -38,13 +34,9 @@ struct Args {
     #[arg(long)]
     ignore_errors: bool,
 
-    /// Show info overview of all repositories (branch, status, ahead/behind)
-    #[arg(long)]
-    info: bool,
-
-    /// Git command and arguments (e.g., "git pull origin main")
-    #[arg(required_unless_present_any = ["config", "info"], num_args = 1.., allow_hyphen_values = true)]
-    git_args: Vec<String>,
+    /// Subcommand and arguments
+    #[arg(num_args = 1.., allow_hyphen_values = true)]
+    command: Vec<String>,
 }
 
 fn main() {
@@ -57,56 +49,48 @@ fn main() {
 fn run() -> Result<()> {
     let args = Args::parse();
 
-    // Handle --config flag
-    if args.config {
-        show_config_info()?;
+    if args.command.is_empty() {
+        Args::parse_from(["gx", "--help"]);
         return Ok(());
     }
 
-    // Handle --info flag
-    if args.info {
-        show_info(&args)?;
-        return Ok(());
-    }
+    let subcmd = &args.command[0];
+    let subcmd_args = &args.command[1..];
 
-    // Load and merge configuration files
-    let (config, _loaded_files) = load_merged_config()?;
-
-    // Handle shortcut management commands
-    if !args.git_args.is_empty() && args.git_args[0] == "shortcut" {
-        handle_shortcut(&args.git_args[1..])?;
-        return Ok(());
-    }
-
-    // Resolve shortcut or validate git command
-    let resolved_args = if !args.git_args.is_empty() && args.git_args[0] != "git" {
-        if let Some(full_cmd) = config.shortcuts.get(&args.git_args[0]) {
-            // Expand shortcut: "pull" + ["origin", "main"] → ["git", "pull", "origin", "main"]
-            let mut expanded: Vec<String> = full_cmd.split_whitespace().map(String::from).collect();
-            expanded.extend_from_slice(&args.git_args[1..]);
-            expanded
-        } else {
-            anyhow::bail!(
-                "Unknown command or shortcut '{}'. Usage: gx git <command> or gx <shortcut>",
-                args.git_args[0]
-            );
+    match subcmd.as_str() {
+        "info" => show_info(&args),
+        "config" => show_config_info(),
+        "shortcut" => handle_shortcut(subcmd_args),
+        "git" => {
+            if subcmd_args.is_empty() {
+                anyhow::bail!("Missing git command. Usage: gx git <command> [args]");
+            }
+            run_git_command(&args, subcmd_args)
         }
-    } else {
-        args.git_args.clone()
-    };
-
-    // Validate that first argument is "git"
-    if resolved_args.is_empty() || resolved_args[0] != "git" {
-        anyhow::bail!("First argument must be 'git'. Usage: gx git <command> [args]");
+        _ => {
+            // Try to resolve as a shortcut name
+            let (config, _) = load_merged_config()?;
+            if let Some(full_cmd) = config.shortcuts.get(subcmd) {
+                let mut expanded: Vec<String> = full_cmd.split_whitespace().map(String::from).collect();
+                expanded.extend_from_slice(subcmd_args);
+                if expanded.is_empty() || expanded[0] != "git" {
+                    anyhow::bail!("Shortcut '{}' must expand to a git command", subcmd);
+                }
+                run_git_command(&args, &expanded[1..])
+            } else {
+                anyhow::bail!(
+                    "Unknown command '{}'. Available: info, config, shortcut, git, <shortcut_name>",
+                    subcmd
+                );
+            }
+        }
     }
+}
 
-    let git_cmd = &resolved_args[1..];
-    if git_cmd.is_empty() {
-        anyhow::bail!("Missing git command. Usage: gx git <command> [args]");
-    }
-
+fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
+    let (config, _loaded_files) = load_merged_config()?;
     let depth = args.depth.unwrap_or(config.default_depth);
-    let start_dir = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let start_dir = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
 
     println!("Searching for git repositories in: {}", start_dir.display());
     println!("Max depth: {}", depth);

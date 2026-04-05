@@ -23,111 +23,20 @@ A command-line tool that recursively executes git commands across all git reposi
 ### Basic Syntax
 
 ```bash
-gx [OPTIONS] git <command> [args...]
+gx <command> [OPTIONS]
 ```
 
-### Examples
+### Commands
 
-**Pull all repositories:**
-```bash
-gx git pull
-```
-
-**Pull with specified depth (5 levels):**
-```bash
-gx --depth 5 git pull
-```
-
-**Pull from specific remote and branch:**
-```bash
-gx git pull origin main
-```
-
-**Check status of all repositories:**
-```bash
-gx git status
-```
-
-**Fetch from all remotes:**
-```bash
-gx git fetch --all
-```
-
-**Specify starting directory:**
-```bash
-gx --path /path/to/projects git pull
-```
-
-**Show last commit in each repository:**
-```bash
-gx git log -1 --oneline
-```
-
-**Only execute in repositories on a specific branch:**
-```bash
-gx --branch main git pull
-```
-
-**Ignore errors and continue execution:**
-```bash
-gx --ignore-errors git push
-```
-
-**Preview without executing (dry-run):**
-```bash
-gx --dry-run git push
-```
-
-**Show repository info:**
-```bash
-gx --info
-```
-
-**View configuration:**
-```bash
-gx --config
-```
-
-**Use a shortcut command:**
-```bash
-# After adding shortcut: gx shortcut add pull "git pull"
-gx pull              # equivalent to: gx git pull
-gx pull origin main  # equivalent to: gx git pull origin main
-```
-
-**Manage shortcuts:**
-```bash
-# Add a shortcut
-gx shortcut add pull "git pull"
-gx shortcut add st "git status"
-
-# List all shortcuts
-gx shortcut list
-
-# Remove a shortcut
-gx shortcut rm st
-```
-
-### gx vs git
-
-`gx` uses the same arguments as `git`, just replace `git` with `gx git`:
-
-| git | gx | Description |
-|---|---|---|
-| `git pull` | `gx git pull` | Pull all repos |
-| `git push` | `gx git push` | Push all repos |
-| `git status` | `gx git status` | Status of all repos |
-| `git fetch --all` | `gx git fetch --all` | Fetch all remotes |
-| `git branch -a` | `gx git branch -a` | List all branches |
-| `git log -1 --oneline` | `gx git log -1 --oneline` | Last commit |
-| `git diff --stat` | `gx git diff --stat` | Diff stats |
-| - | `gx --branch main git pull` | Pull only `main` branch repos |
-| - | `gx --dry-run git push` | Preview without executing |
-| - | `gx --info` | Show all repos info |
-| - | `gx --ignore-errors git push` | Continue on error |
-| - | `gx pull` (shortcut) | Use custom shortcut |
-| - | `gx shortcut list` | List all shortcuts |
-| - | `gx --config` | View configuration |
+| Command | Description |
+|---------|-------------|
+| `gx git <cmd> [args]` | Execute git command in all repos |
+| `gx info` | Show overview of all repos |
+| `gx config` | Show configuration |
+| `gx shortcut add <name> "git <cmd>"` | Add a shortcut |
+| `gx shortcut rm <name>` | Remove a shortcut |
+| `gx shortcut list` | List all shortcuts |
+| `gx <shortcut> [args]` | Execute via shortcut name |
 
 ### Options
 
@@ -138,9 +47,84 @@ gx shortcut rm st
 | `--branch` | | Only execute in repos matching this branch | - |
 | `--dry-run` | | Show what would be done without executing | - |
 | `--ignore-errors` | | Continue execution when a repo fails | Stop on first error |
-| `--info` | | Show info of all repos (branch, status, ahead/behind) | - |
-| `--config` | | Show configuration file location and contents | - |
 | `--help` | `-h` | Show help message | - |
+
+Options can be used with any command. For example:
+
+```bash
+gx --depth 5 git pull
+gx --branch main info
+gx --dry-run git push
+```
+
+### Examples
+
+**Execute git commands:**
+```bash
+gx git pull                        # Pull all repos
+gx git push                        # Push all repos
+gx git status                      # Status of all repos
+gx git fetch --all                 # Fetch all remotes
+gx git branch -a                   # List all branches
+gx git log -1 --oneline            # Last commit in each repo
+gx git diff --stat                 # Diff stats
+gx git pull origin main            # Pull from specific remote/branch
+```
+
+**With options:**
+```bash
+gx --depth 5 git pull              # Custom search depth
+gx --path /path/to/projects git pull  # Custom starting directory
+gx --branch main git pull          # Only repos on main branch
+gx --dry-run git push              # Preview without executing
+gx --ignore-errors git push        # Continue on error
+```
+
+**Repository info:**
+```bash
+gx info                            # Show all repos overview
+gx info --depth 5                  # With custom depth
+gx info --branch main              # Filter by branch
+```
+
+**Manage shortcuts:**
+```bash
+gx shortcut add pull "git pull"    # Add shortcut
+gx shortcut add st "git status"
+gx shortcut add co "git checkout"
+gx shortcut list                   # List all shortcuts
+gx shortcut rm st                  # Remove shortcut
+```
+
+**Use shortcuts:**
+```bash
+gx pull                            # equivalent to: gx git pull
+gx pull origin main                # equivalent to: gx git pull origin main
+gx st                              # equivalent to: gx git status
+```
+
+**View configuration:**
+```bash
+gx config
+```
+
+### gx vs git
+
+| git | gx | Description |
+|---|---|---|
+| `git pull` | `gx git pull` | Pull all repos |
+| `git push` | `gx git push` | Push all repos |
+| `git status` | `gx git status` | Status of all repos |
+| `git fetch --all` | `gx git fetch --all` | Fetch all remotes |
+| `git branch -a` | `gx git branch -a` | List all branches |
+| `git log -1 --oneline` | `gx git log -1 --oneline` | Last commit |
+| `git diff --stat` | `gx git diff --stat` | Diff stats |
+| - | `gx info` | Show all repos info |
+| - | `gx --branch main git pull` | Pull only `main` branch repos |
+| - | `gx --dry-run git push` | Preview without executing |
+| - | `gx --ignore-errors git push` | Continue on error |
+| - | `gx pull` | Use custom shortcut |
+| - | `gx config` | View configuration |
 
 ### Passing Options to Git
 
@@ -158,10 +142,10 @@ gx -- git -h
 
 ## Output
 
-### Repository Info (`--info`)
+### Repository Info (`gx info`)
 
 ```bash
-gx --info
+gx info
 ```
 
 Displays a summary of all repositories:
@@ -280,8 +264,8 @@ Two configuration levels are supported (higher priority overrides lower):
   - **`globs`** (array of strings): Glob patterns for path matching
   - **`regexes`** (array of strings): Regular expression patterns
 
-- **`shortcuts`** (object, key-value pairs)
-  - Key is the shortcut name, value is the full command to expand
+- **`shortcuts`** (object)
+  - Key-value pairs mapping shortcut name to git command
   - Can be managed via CLI: `gx shortcut add/rm/list`
   - Example: `"pull": "git pull"` allows `gx pull` instead of `gx git pull`
 
