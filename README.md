@@ -14,6 +14,7 @@ A command-line tool that recursively executes git commands across all git reposi
 - 🔮 Dry-run mode to preview operations without executing
 - 🛡️ Ignore errors option to continue on failure
 - 📊 Progress indicators and execution statistics
+- 📋 Repository info view (branch, status, ahead/behind)
 - 🐚 Shell auto-completion (bash, zsh, fish, powershell, elvish)
 - ⚙️ Hierarchical configuration files (project + user level)
 
@@ -77,6 +78,11 @@ gx --ignore-errors git push
 gx --dry-run git push
 ```
 
+**Show repository info:**
+```bash
+gx --info
+```
+
 **View configuration:**
 ```bash
 gx --config
@@ -101,7 +107,8 @@ gx --completions bash
 | `git log -1 --oneline` | `gx git log -1 --oneline` | Last commit |
 | `git diff --stat` | `gx git diff --stat` | Diff stats |
 | - | `gx --branch main git pull` | Pull only `main` branch repos |
-| - | `gx --dry-run git push` | Preview without executing |
+| | - | `gx --dry-run git push` | Preview without executing |
+| - | `gx --info` | Show all repos info |
 | - | `gx --ignore-errors git push` | Continue on error |
 | - | `gx --config` | View configuration |
 | - | `gx --completions bash` | Generate completions |
@@ -115,6 +122,7 @@ gx --completions bash
 | `--branch` | | Only execute in repos matching this branch | - |
 | `--dry-run` | | Show what would be done without executing | - |
 | `--ignore-errors` | | Continue execution when a repo fails | Stop on first error |
+| `--info` | | Show info of all repos (branch, status, ahead/behind) | - |
 | `--config` | | Show configuration file location and contents | - |
 | `--completions` | | Generate shell completion script | - |
 | `--help` | `-h` | Show help message | - |
@@ -134,6 +142,30 @@ gx -- git -h
 | `gx -- git -h` | Pass `-h` to git |
 
 ## Output
+
+### Repository Info (`--info`)
+
+```bash
+gx --info
+```
+
+Displays a summary of all repositories:
+
+```
+  📁 project1    main       ✓ clean     ↑0 ↓0
+  📁 project2    dev        ⚠ dirty     ↑2 ↓0
+  📁 project3    feature/x  ✓ clean     ↑0 ↓3
+  📁 project4    main       ✗ detached
+
+  Total: 4 repos | 1 dirty | 1 ahead | 1 behind
+```
+
+**Column descriptions:**
+- **Branch** - Current branch name (cyan) or `detached` (gray) for detached HEAD
+- **Status** - `✓ clean` (green) if no changes, `⚠ dirty` (yellow) if there are changes, `✗ detached` (red) if detached HEAD
+- **Sync** - `↑N ↓N` showing ahead/behind commits relative to upstream (hidden if up-to-date)
+
+### Command Execution
 
 The tool displays:
 - 🔍 Search directory and depth

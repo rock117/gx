@@ -3,12 +3,44 @@ mod collect;
 mod git;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser, ValueEnum};
+use clap_complete::{generate, Shell};
 use std::path::PathBuf;
 
 use config::{load_merged_config, show_config_info};
-use git::{execute_git_command, get_current_branch};
+use git::{execute_git_command, get_current_branch, get_repo_status};
 use collect::collect_git_repos;
+
+/// Common git subcommands for shell completion
+#[derive(Debug, Clone, ValueEnum)]
+enum GitCommand {
+    Add,
+    Bisect,
+    Branch,
+    Checkout,
+    CherryPick,
+    Clone,
+    Commit,
+    Diff,
+    Fetch,
+    Grep,
+    Init,
+    Log,
+    Merge,
+    Mv,
+    Pull,
+    Push,
+    Rebase,
+    Reset,
+    Restore,
+    Revert,
+    Rm,
+    Show,
+    Stash,
+    Status,
+    Switch,
+    Tag,
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "gx")]
@@ -38,12 +70,16 @@ struct Args {
     #[arg(long)]
     ignore_errors: bool,
 
+    /// Show info overview of all repositories (branch, status, ahead/behind)
+    #[arg(long)]
+    info: bool,
+
     /// Generate shell completion script (bash, zsh, fish, powershell, elvish)
     #[arg(long, value_name = "SHELL")]
     completions: Option<String>,
 
     /// Git command and arguments (e.g., "git pull origin main")
-    #[arg(required_unless_present_any = ["config", "completions"], num_args = 1.., allow_hyphen_values = true)]
+    #[arg(required_unless_present_any = ["config", "completions", "info"], num_args = 1.., allow_hyphen_values = true)]
     git_args: Vec<String>,
 }
 
@@ -66,6 +102,12 @@ fn run() -> Result<()> {
     // Handle --config flag
     if args.config {
         show_config_info()?;
+        return Ok(());
+    }
+
+    // Handle --info flag
+    if args.info {
+        show_info(&args)?;
         return Ok(());
     }
 
@@ -195,21 +237,121 @@ fn run() -> Result<()> {
 
 fn print_completions(shell: &str) -> Result<()> {
     let shell_type = match shell {
-        "bash" => clap_complete::Shell::Bash,
-        "zsh" => clap_complete::Shell::Zsh,
-        "fish" => clap_complete::Shell::Fish,
-        "powershell" | "powershell.exe" | "ps1" => clap_complete::Shell::PowerShell,
-        "elvish" => clap_complete::Shell::Elvish,
+        "bash" => Shell::Bash,
+        "zsh" => Shell::Zsh,
+        "fish" => Shell::Fish,
+        "powershell" | "powershell.exe" | "ps1" => Shell::PowerShell,
+        "elvish" => Shell::Elvish,
         _ => anyhow::bail!(
             "Unknown shell '{}'. Supported: bash, zsh, fish, powershell, elvish",
             shell
         ),
     };
-    clap_complete::generate(
+    generate(
         shell_type,
-        &mut <Args as clap::CommandFactory>::command(),
+        &mut Args::command(),
         "gx",
         &mut std::io::stdout(),
     );
+    Ok(())
+}
+
+fn show_info(args: &Args) -> Result<()> {
+    let (config, _loaded_files) = load_merged_config()?;
+    let depth = args.depth.unwrap_or(config.default_depth);
+    let start_dir = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
+
+    // Compile regex patterns from config
+    let exclude_regexes: Result<Vec<regex::Regex>> = config
+        .exclude
+        .regexes
+        .iter()
+        .map(|pattern| regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern)))
+        .collect();
+    let exclude_regexes = exclude_regexes.unwrap_or_default();
+
+    let repos = collect_git_repos(&start_dir, depth, &config, &exclude_regexes)?;
+    if repos.is_empty() {
+        println!("No git repositories found.");
+        return Ok(());
+    }
+
+    // Collect status for all repos
+    let mut repo_infos: Vec<(std::path::PathBuf, git::RepoStatus)> = Vec::new();
+    for repo in &repos {
+        let status = get_repo_status(repo);
+        repo_infos.push((repo.clone(), status));
+    }
+
+    // Filter by branch if specified
+    if let Some(ref branch_filter) = args.branch {
+        repo_infos.retain(|(_, status)| {
+            status.branch.as_deref() == Some(branch_filter.as_str())
+        });
+    }
+
+    if repo_infos.is_empty() {
+        println!("No git repositories matching branch '{}'.", args.branch.as_deref().unwrap_or(""));
+        return Ok(());
+    }
+
+    // Calculate column widths for alignment (based on visible chars only)
+    let max_path_len = repo_infos.iter().map(|(p, _)| p.display().to_string().len()).max().unwrap_or(10);
+    let path_width = max_path_len.max(6);
+    let max_branch_len = repo_infos.iter().map(|(_, s)| s.branch.as_ref().map_or(8, |b| b.len())).max().unwrap_or(6);
+    let branch_width = max_branch_len.max(6);
+
+    let total = repo_infos.len();
+
+    for (repo, status) in &repo_infos {
+        let path_str = repo.display().to_string();
+
+        // Branch (plain text for width calculation)
+        let (branch_display, branch_visible_len) = match &status.branch {
+            Some(b) => (format!("\x1b[36m{}\x1b[0m", b), b.len()),
+            None => ("\x1b[90mdetached\x1b[0m".to_string(), 8),
+        };
+
+        // Status
+        let (status_display, status_visible_len) = if status.branch.is_none() {
+            ("\x1b[31m✗ detached\x1b[0m".to_string(), 10)
+        } else if status.is_dirty {
+            ("\x1b[33m⚠ dirty\x1b[0m".to_string(), 8)
+        } else {
+            ("\x1b[32m✓ clean\x1b[0m".to_string(), 7)
+        };
+
+        // Sync (ahead/behind) - always show for repos with branch
+        let sync_display = if status.branch.is_some() {
+            format!("↑{} ↓{}", status.ahead, status.behind)
+        } else {
+            String::new()
+        };
+
+        // Build line with manual padding
+        let path_padded = format!("{:<width$}", path_str, width = path_width);
+        let branch_padding = " ".repeat(branch_width - branch_visible_len);
+        let status_padding = " ".repeat(10 - status_visible_len);
+
+        println!("  📁 {}  {}{}  {}{}  {}",
+            path_padded,
+            branch_display, branch_padding,
+            status_display, status_padding,
+            sync_display,
+        );
+    }
+
+    // Summary
+    let dirty_count = repo_infos.iter().filter(|(_, s)| s.is_dirty).count();
+    let ahead_count = repo_infos.iter().filter(|(_, s)| s.ahead > 0).count();
+    let behind_count = repo_infos.iter().filter(|(_, s)| s.behind > 0).count();
+
+    println!();
+    print!("  Total: {} repos", total);
+    if dirty_count > 0 { print!(" | \x1b[33m{} dirty\x1b[0m", dirty_count); }
+    if ahead_count > 0 { print!(" | \x1b[32m{} ahead\x1b[0m", ahead_count); }
+    if behind_count > 0 { print!(" | \x1b[31m{} behind\x1b[0m", behind_count); }
+    println!();
+
     Ok(())
 }
