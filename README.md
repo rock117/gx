@@ -33,7 +33,7 @@ gx <command> [OPTIONS]
 | `gx git <cmd> [args]` | Execute git command in all repos |
 | `gx info` | Show overview of all repos |
 | `gx last` | Show latest commit for each repo |
-| `gx log [-n <count>]` | Show recent commits for each repo (default: 3) |
+| `gx log [-<N>]` | Show recent commits for each repo (default: 3, e.g. -5) |
 | `gx config` | Show configuration |
 | `gx shortcut add <name> "git <cmd>"` | Add a shortcut |
 | `gx shortcut rm <name>` | Remove a shortcut |
@@ -95,8 +95,8 @@ gx info --branch main              # Filter by branch
 gx last                            # Show latest commit for each repo
 gx last --depth 5                  # With custom depth
 gx log                             # Show last 3 commits for each repo
-gx log -n 5                        # Show last 5 commits for each repo
-gx log -n 10                       # Show last 10 commits for each repo
+gx log -5                          # Show last 5 commits for each repo
+gx log -10                         # Show last 10 commits for each repo
 ```
 
 **Manage shortcuts:**
@@ -135,7 +135,7 @@ gx config
 | - | `gx info` | Show all repos info |
 | - | `gx last` | Show latest commit for each repo |
 | - | `gx log` | Show last 3 commits for each repo |
-| - | `gx log -n 5` | Show last 5 commits for each repo |
+| - | `gx log -5` | Show last 5 commits for each repo |
 | - | `gx --branch main git pull` | Pull only `main` branch repos |
 | - | `gx --dry-run git push` | Preview without executing |
 | - | `gx --stop-on-error git push` | Stop on first error |

@@ -14,7 +14,7 @@ const SUBCOMMAND_HELP: &str = "\
 Commands:
   info                   Show overview of all repositories
   last                   Show latest commit for each repo
-  log [-n <count>]       Show recent commits for each repo (default: 3)
+  log [-<N>]              Show recent commits for each repo (default: 3, e.g. -5)
   config                 Show configuration file location and contents
   shortcut <add|rm|list> Manage custom shortcut commands
   git <cmd> [args]       Execute git command in all repos
@@ -397,18 +397,14 @@ fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Parse -n <count> from log subcommand args, default 3
+/// Parse -N (e.g. -5) from log subcommand args, default 3
 fn parse_log_count(args: &[String]) -> usize {
     let mut n = 3;
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "-n" && i + 1 < args.len() {
-            if let Ok(count) = args[i + 1].parse::<usize>() {
+    for arg in args {
+        if let Some(num) = arg.strip_prefix('-') {
+            if let Ok(count) = num.parse::<usize>() {
                 n = count.max(1);
             }
-            i += 2;
-        } else {
-            i += 1;
         }
     }
     n
