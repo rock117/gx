@@ -134,3 +134,34 @@ fn is_dirty_check(repo_dir: &Path) -> bool {
 pub fn is_git_repo(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
+
+/// Latest commit info
+pub struct LatestCommit {
+    pub hash: String,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+}
+
+/// Get the latest commit of a git repository
+pub fn get_latest_commit(repo_dir: &Path) -> Option<LatestCommit> {
+    let output = Command::new("git")
+        .args(["log", "-1", "--format=%h|%an|%ar|%s"])
+        .current_dir(repo_dir)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let parts: Vec<&str> = s.splitn(4, '|').collect();
+        if parts.len() == 4 {
+            return Some(LatestCommit {
+                hash: parts[0].to_string(),
+                author: parts[1].to_string(),
+                date: parts[2].to_string(),
+                message: parts[3].to_string(),
+            });
+        }
+    }
+    None
+}

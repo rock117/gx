@@ -7,12 +7,13 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut, list_shortcuts, clear_shortcuts};
-use git::{execute_git_command, get_current_branch, get_repo_status};
+use git::{execute_git_command, get_current_branch, get_repo_status, get_latest_commit};
 use collect::collect_git_repos;
 
 const SUBCOMMAND_HELP: &str = "\
 Commands:
   info                   Show overview of all repositories
+  log                    Show latest commit for each repo
   config                 Show configuration file location and contents
   shortcut <add|rm|list> Manage custom shortcut commands
   git <cmd> [args]       Execute git command in all repos
@@ -21,6 +22,7 @@ Commands:
 Examples:
   gx git pull            Pull all repos
   gx info                Show repo overview
+  gx log                 Show latest commit for each repo
   gx shortcut add pull \"git pull\"
   gx pull                Use shortcut to pull all repos";
 
@@ -73,6 +75,7 @@ fn run() -> Result<()> {
 
     match subcmd.as_str() {
         "info" => show_info(&args),
+        "log" => show_log(&args),
         "config" => show_config_info(),
         "shortcut" => handle_shortcut(subcmd_args),
         "git" => {
@@ -309,6 +312,68 @@ fn show_info(args: &Args) -> Result<()> {
     if ahead_count > 0 { print!(" | \x1b[32m{} ahead\x1b[0m", ahead_count); }
     if behind_count > 0 { print!(" | \x1b[31m{} behind\x1b[0m", behind_count); }
     println!();
+
+    Ok(())
+}
+
+fn show_log(args: &Args) -> Result<()> {
+    let (config, _loaded_files) = load_merged_config()?;
+    let depth = args.depth.unwrap_or(config.default_depth);
+    let start_dir = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
+
+    // Compile regex patterns from config
+    let exclude_regexes: Result<Vec<regex::Regex>> = config
+        .exclude
+        .regexes
+        .iter()
+        .map(|pattern| regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern)))
+        .collect();
+    let exclude_regexes = exclude_regexes.unwrap_or_default();
+
+    let repos = collect_git_repos(&start_dir, depth, &config, &exclude_regexes)?;
+    if repos.is_empty() {
+        println!("No git repositories found.");
+        return Ok(());
+    }
+
+    // Filter by branch if specified
+    let filtered_repos: Vec<PathBuf> = if let Some(ref branch_filter) = args.branch {
+        repos
+            .into_iter()
+            .filter(|repo| {
+                let branch = get_current_branch(repo);
+                branch.as_deref() == Some(branch_filter.as_str())
+            })
+            .collect()
+    } else {
+        repos
+    };
+
+    if filtered_repos.is_empty() {
+        println!("No git repositories matching branch '{}'.", args.branch.as_deref().unwrap_or(""));
+        return Ok(());
+    }
+
+    // Calculate column widths
+    let max_path_len = filtered_repos.iter().map(|p| p.display().to_string().len()).max().unwrap_or(10);
+    let path_width = max_path_len.max(6);
+
+    for repo in &filtered_repos {
+        let path_str = repo.display().to_string();
+        let path_padded = format!("{:<width$}", path_str, width = path_width);
+
+        if let Some(commit) = get_latest_commit(repo) {
+            println!("  📁 {}  \x1b[33m{}\x1b[0m  \x1b[36m{}\x1b[0m  \x1b[90m{}\x1b[0m  {}",
+                path_padded,
+                commit.hash,
+                commit.author,
+                commit.date,
+                commit.message,
+            );
+        } else {
+            println!("  📁 {}  \x1b[90m(no commits)\x1b[0m", path_padded);
+        }
+    }
 
     Ok(())
 }
