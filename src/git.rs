@@ -136,7 +136,7 @@ pub fn is_git_repo(dir: &Path) -> bool {
 }
 
 /// Latest commit info
-pub struct LatestCommit {
+pub struct CommitInfo {
     pub hash: String,
     pub author: String,
     pub date: String,
@@ -144,24 +144,39 @@ pub struct LatestCommit {
 }
 
 /// Get the latest commit of a git repository
-pub fn get_latest_commit(repo_dir: &Path) -> Option<LatestCommit> {
-    let output = Command::new("git")
-        .args(["log", "-1", "--format=%h|%an|%ar|%s"])
+pub fn get_latest_commit(repo_dir: &Path) -> Option<CommitInfo> {
+    get_commits(repo_dir, 1).into_iter().next()
+}
+
+/// Get the N latest commits of a git repository
+pub fn get_commits(repo_dir: &Path, n: usize) -> Vec<CommitInfo> {
+    let output = std::process::Command::new("git")
+        .args(["log", &format!("-{}", n), "--format=%h|%an|%ar|%s"])
         .current_dir(repo_dir)
         .output()
-        .ok()?;
+        .ok();
 
-    if output.status.success() {
-        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let parts: Vec<&str> = s.splitn(4, '|').collect();
-        if parts.len() == 4 {
-            return Some(LatestCommit {
-                hash: parts[0].to_string(),
-                author: parts[1].to_string(),
-                date: parts[2].to_string(),
-                message: parts[3].to_string(),
-            });
+    if let Some(output) = output {
+        if output.status.success() {
+            let s = String::from_utf8_lossy(&output.stdout);
+            let mut commits = Vec::new();
+            for line in s.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let parts: Vec<&str> = line.splitn(4, '|').collect();
+                if parts.len() == 4 {
+                    commits.push(CommitInfo {
+                        hash: parts[0].to_string(),
+                        author: parts[1].to_string(),
+                        date: parts[2].to_string(),
+                        message: parts[3].to_string(),
+                    });
+                }
+            }
+            return commits;
         }
     }
-    None
+    Vec::new()
 }
