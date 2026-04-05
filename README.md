@@ -90,6 +90,22 @@ gx --dry-run push
 | `--dry-run` | - | Show what would be done without executing | - |
 | `--help` | `-h` | Show help message | - |
 
+### Passing Options to Git
+
+If you need to pass options that conflict with gx options (like `-h`, `--help`), use `--` as a separator:
+
+```bash
+# Show git help (not gx help)
+gx -- -h
+gx -- --help
+```
+
+| gx command | behavior |
+|---|---|
+| `gx -h` | Show gx help |
+| `gx -- -h` | Pass `-h` to git |
+| `gx -- --help` | Pass `--help` to git |
+
 ### Show Configuration
 
 To view all active configuration files and merged settings:
