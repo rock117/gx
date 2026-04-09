@@ -1,3 +1,4 @@
+mod color;
 mod config;
 mod collect;
 mod git;
@@ -6,28 +7,29 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
+use color::{c, Color};
 use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut, list_shortcuts, clear_shortcuts};
-use git::{execute_git_command, get_current_branch, get_repo_status, get_latest_commit, get_commits};
+use git::{execute_git_command, get_current_branch, get_repo_status, get_latest_commit, get_commits, get_commits_from_ref, fetch_remote, get_upstream_branch};
 use collect::collect_git_repos;
 
 const SUBCOMMAND_HELP: &str = "\
-Commands:
-  info                   Show overview of all repositories
-  last                   Show latest commit for each repo
-  log [-<N>]              Show recent commits for each repo (default: 3, e.g. -5)
-  config                 Show configuration file location and contents
-  shortcut <add|rm|list> Manage custom shortcut commands
-  git <cmd> [args]       Execute git command in all repos
-  <shortcut> [args]      Execute via shortcut name
+	Commands:
+	  info                   Show overview of all repositories
+	  last                   Show latest commit for each repo
+	  log [-<N>]              Show recent commits for each repo (default: 3, e.g. -5)
+	  config                 Show configuration file location and contents
+	  shortcut <add|rm|list> Manage custom shortcut commands
+	  git <cmd> [args]       Execute git command in all repos
+	  <shortcut> [args]      Execute via shortcut name
 
-Examples:
-  gx git pull            Pull all repos
-  gx info                Show repo overview
-  gx last                Show latest commit for each repo
-  gx log                 Show last 3 commits for each repo
-  gx log -n 5            Show last 5 commits for each repo
-  gx shortcut add pull \"git pull\"
-  gx pull                Use shortcut to pull all repos";
+	Examples:
+	  gx git pull            Pull all repos
+	  gx info                Show repo overview
+	  gx last                Show latest commit for each repo
+	  gx log                 Show last 3 commits for each repo
+	  gx log -n 5            Show last 5 commits for each repo
+	  gx shortcut add pull \"git pull\"
+	  gx pull                Use shortcut to pull all repos";
 
 #[derive(Parser, Debug)]
 #[command(name = "gx")]
@@ -52,6 +54,10 @@ struct Args {
     /// Stop on first error (default: continue on error)
     #[arg(long)]
     stop_on_error: bool,
+
+    /// Show commits from remote tracking branch (fetch first)
+    #[arg(long)]
+    remote: bool,
 
     /// Subcommand and arguments
     #[arg(num_args = 1.., allow_hyphen_values = true)]
@@ -122,7 +128,7 @@ fn dispatch_command(args: &Args, config: &config::Config, group: &[String]) -> R
 
     match subcmd.as_str() {
         "info" => show_info(args),
-        "last" => show_last(args),
+        "last" => show_last(args, subcmd_args),
         "log" => show_log(args, subcmd_args),
         "config" => show_config_info(),
         "shortcut" => handle_shortcut(subcmd_args),
@@ -163,7 +169,7 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
     println!("Command: git {}\n", git_cmd.join(" "));
 
     if args.dry_run {
-        println!("\x1b[33m[DRY RUN] Showing what would be done without executing\x1b[0m\n");
+        println!("{}\n", c(Color::Yellow, "[DRY RUN] Showing what would be done without executing"));
     }
 
     // Compile regex patterns from config
@@ -205,7 +211,7 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
     for repo in &filtered_repos {
         let branch = get_current_branch(repo);
         match branch.as_deref() {
-            Some(b) => println!("  📁 {} => \x1b[36m{}\x1b[0m", repo.display(), b),
+            Some(b) => println!("  📁 {} => {}", repo.display(), c(Color::Cyan, b)),
             None => println!("  📁 {}", repo.display()),
         };
     }
@@ -221,7 +227,7 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
         let progress = format!("[{}/{}]", index + 1, total);
 
         match branch.as_deref() {
-            Some(b) => println!("{} 📁 {} => \x1b[36m{}\x1b[0m", progress, repo.display(), b),
+            Some(b) => println!("{} 📁 {} => {}", progress, repo.display(), c(Color::Cyan, b)),
             None => println!("{} 📁 {}", progress, repo.display()),
         };
 
@@ -236,8 +242,9 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
                     failed += 1;
                     if args.stop_on_error {
                         println!();
-                        println!("\x1b[31m✗ Stopped at {} (default: continue on error, use --stop-on-error to stop)\x1b[0m",
-                            repo.display());
+                        println!("{}",
+                            c(Color::Red, &format!("✗ Stopped at {} (default: continue on error, use --stop-on-error to stop)",
+                                repo.display())));
                         break;
                     }
                 }
@@ -249,13 +256,16 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
     println!();
     let processed = succeeded + failed;
     if args.dry_run {
-        println!("\x1b[33m[DRY RUN] Summary: {} repositories would be affected\x1b[0m", total);
+        println!("{}", c(Color::Yellow, &format!("[DRY RUN] Summary: {} repositories would be affected", total)));
     } else {
-        let status = if failed == 0 { "\x1b[32m✓\x1b[0m" } else { "\x1b[33m⚠\x1b[0m" };
-        println!("{} Summary: \x1b[36m{}\x1b[0m processed, \x1b[32m{}\x1b[0m succeeded, \x1b[31m{}\x1b[0m failed",
-            status, processed, succeeded, failed);
+        let status = if failed == 0 { c(Color::Green, "✓") } else { c(Color::Yellow, "⚠") };
+        println!("{} Summary: {} processed, {} succeeded, {} failed",
+            status,
+            c(Color::Cyan, &processed.to_string()),
+            c(Color::Green, &succeeded.to_string()),
+            c(Color::Red, &failed.to_string()));
         if processed < total {
-            println!("\x1b[33m  {} repositories skipped (stopped early)\x1b[0m", total - processed);
+            println!("  {}", c(Color::Yellow, &format!("{} repositories skipped (stopped early)", total - processed)));
         }
     }
 
@@ -314,17 +324,21 @@ fn show_info(args: &Args) -> Result<()> {
 
         // Branch (plain text for width calculation)
         let (branch_display, branch_visible_len) = match &status.branch {
-            Some(b) => (format!("\x1b[36m{}\x1b[0m", b), b.len()),
-            None => ("\x1b[90mdetached\x1b[0m".to_string(), 8),
+            Some(b) => (c(Color::Cyan, b), b.len()),
+            None => (c(Color::Gray, "detached"), 8),
         };
 
         // Status
-        let (status_display, status_visible_len) = if status.branch.is_none() {
-            ("\x1b[31m✗ detached\x1b[0m".to_string(), 10)
+        let status_display = if status.branch.is_none() {
+            c(Color::Red, "✗ detached")
         } else if status.is_dirty {
-            ("\x1b[33m⚠ dirty\x1b[0m".to_string(), 8)
+            let mut parts = vec![c(Color::Yellow, "⚠ dirty")];
+            if status.modified > 0 { parts.push(c(Color::BrightYellow, &format!("{}M", status.modified))); }
+            if status.deleted > 0 { parts.push(c(Color::BrightRed, &format!("{}D", status.deleted))); }
+            if status.added > 0 { parts.push(c(Color::BrightGreen, &format!("{}A", status.added))); }
+            parts.join(" ")
         } else {
-            ("\x1b[32m✓ clean\x1b[0m".to_string(), 7)
+            c(Color::Green, "✓ clean")
         };
 
         // Sync (ahead/behind) - always show for repos with branch
@@ -337,12 +351,11 @@ fn show_info(args: &Args) -> Result<()> {
         // Build line with manual padding
         let path_padded = format!("{:<width$}", path_str, width = path_width);
         let branch_padding = " ".repeat(branch_width - branch_visible_len);
-        let status_padding = " ".repeat(10 - status_visible_len);
 
-        println!("  📁 {}  {}{}  {}{}  {}",
+        println!("  📁 {}  {}{}  {}  {}",
             path_padded,
             branch_display, branch_padding,
-            status_display, status_padding,
+            status_display,
             sync_display,
         );
     }
@@ -354,15 +367,16 @@ fn show_info(args: &Args) -> Result<()> {
 
     println!();
     print!("  Total: {} repos", total);
-    if dirty_count > 0 { print!(" | \x1b[33m{} dirty\x1b[0m", dirty_count); }
-    if ahead_count > 0 { print!(" | \x1b[32m{} ahead\x1b[0m", ahead_count); }
-    if behind_count > 0 { print!(" | \x1b[31m{} behind\x1b[0m", behind_count); }
+    if dirty_count > 0 { print!(" | {} dirty", c(Color::Yellow, &dirty_count.to_string())); }
+    if ahead_count > 0 { print!(" | {} ahead", c(Color::Green, &ahead_count.to_string())); }
+    if behind_count > 0 { print!(" | {} behind", c(Color::Red, &behind_count.to_string())); }
     println!();
 
     Ok(())
 }
 
-fn show_last(args: &Args) -> Result<()> {
+fn show_last(args: &Args, subcmd_args: &[String]) -> Result<()> {
+    let remote = args.remote || subcmd_args.iter().any(|a| a == "--remote");
     let (config, _loaded_files) = load_merged_config()?;
     let depth = args.depth.unwrap_or(config.default_depth);
     let start_dir = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
@@ -383,16 +397,35 @@ fn show_last(args: &Args) -> Result<()> {
         let path_str = repo.display().to_string();
         let path_padded = format!("{:<width$}", path_str, width = path_width);
 
-        if let Some(commit) = get_latest_commit(repo) {
-            println!("  📁 {}  \x1b[33m{}\x1b[0m  \x1b[36m{}\x1b[0m  \x1b[90m{}\x1b[0m  {}",
+        if remote {
+            fetch_remote(repo);
+            if let Some(upstream) = get_upstream_branch(repo) {
+                let commits = get_commits_from_ref(repo, 1, &upstream);
+                if let Some(commit) = commits.into_iter().next() {
+                    println!("  📁 {}  {}  {}  {}  {}  {}",
+                        path_padded,
+                        c(Color::Gray, &format!("({})", upstream)),
+                        c(Color::Yellow, &commit.hash),
+                        c(Color::Cyan, &commit.author),
+                        c(Color::Gray, &commit.date),
+                        commit.message,
+                    );
+                } else {
+                    println!("  📁 {}  {}", path_padded, c(Color::Gray, &format!("(no commits on {})", upstream)));
+                }
+            } else {
+                println!("  📁 {}  {}", path_padded, c(Color::Gray, "(no upstream)"));
+            }
+        } else if let Some(commit) = get_latest_commit(repo) {
+            println!("  📁 {}  {}  {}  {}  {}",
                 path_padded,
-                commit.hash,
-                commit.author,
-                commit.date,
+                c(Color::Yellow, &commit.hash),
+                c(Color::Cyan, &commit.author),
+                c(Color::Gray, &commit.date),
                 commit.message,
             );
         } else {
-            println!("  📁 {}  \x1b[90m(no commits)\x1b[0m", path_padded);
+            println!("  📁 {}  {}", path_padded, c(Color::Gray, "(no commits)"));
         }
     }
 
@@ -400,6 +433,7 @@ fn show_last(args: &Args) -> Result<()> {
 }
 
 fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
+    let remote = args.remote || log_args.iter().any(|a| a == "--remote");
     // Parse -n <count> from log_args
     let n = parse_log_count(log_args);
 
@@ -418,22 +452,47 @@ fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
 
     for repo in &filtered_repos {
         let path_str = repo.display().to_string();
-        let commits = get_commits(repo, n);
-        if commits.is_empty() {
-            println!("  📁 {}  \x1b[90m(no commits)\x1b[0m", path_str);
-            continue;
-        }
 
-        println!("  📁 {}:", path_str);
-        for commit in &commits {
-            println!("    \x1b[33m{}\x1b[0m  \x1b[36m{}\x1b[0m  \x1b[90m{}\x1b[0m  {}",
-                commit.hash,
-                commit.author,
-                commit.date,
-                commit.message,
-            );
+        if remote {
+            fetch_remote(repo);
+            if let Some(upstream) = get_upstream_branch(repo) {
+                let commits = get_commits_from_ref(repo, n, &upstream);
+                if commits.is_empty() {
+                    println!("  📁 {}  {}", path_str, c(Color::Gray, &format!("(no commits on {})", upstream)));
+                    continue;
+                }
+
+                println!("  📁 {} {}:", path_str, c(Color::Gray, &format!("({})", upstream)));
+                for commit in &commits {
+                    println!("    {}  {}  {}  {}",
+                        c(Color::Yellow, &commit.hash),
+                        c(Color::Cyan, &commit.author),
+                        c(Color::Gray, &commit.date),
+                        commit.message,
+                    );
+                }
+                println!();
+            } else {
+                println!("  📁 {}  {}", path_str, c(Color::Gray, "(no upstream)"));
+            }
+        } else {
+            let commits = get_commits(repo, n);
+            if commits.is_empty() {
+                println!("  📁 {}  {}", path_str, c(Color::Gray, "(no commits)"));
+                continue;
+            }
+
+            println!("  📁 {}:", path_str);
+            for commit in &commits {
+                println!("    {}  {}  {}  {}",
+                    c(Color::Yellow, &commit.hash),
+                    c(Color::Cyan, &commit.author),
+                    c(Color::Gray, &commit.date),
+                    commit.message,
+                );
+            }
+            println!();
         }
-        println!();
     }
 
     Ok(())

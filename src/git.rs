@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
+use crate::color::{c, Color};
+
 /// Execute git command in the specified repository
 pub fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
     let output = Command::new("git")
@@ -20,7 +22,7 @@ pub fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
     if !output.stderr.is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
-            eprint!("  \x1b[31m✗ Error:\x1b[0m ");
+            eprint!("  {} ", c(Color::Red, "✗ Error:"));
         }
         eprint!("{}", stderr);
     }
@@ -64,6 +66,9 @@ pub struct RepoStatus {
     pub is_dirty: bool,
     pub ahead: usize,
     pub behind: usize,
+    pub modified: usize,
+    pub deleted: usize,
+    pub added: usize,
 }
 
 /// Get detailed status of a git repository
@@ -73,14 +78,17 @@ pub fn get_repo_status(repo_dir: &Path) -> RepoStatus {
     // Get ahead/behind count
     let (ahead, behind) = get_ahead_behind(repo_dir);
 
-    // Get porcelain status for dirty check
-    let is_dirty = is_dirty_check(repo_dir);
+    // Get porcelain status for dirty check and file change counts
+    let (is_dirty, modified, deleted, added) = parse_porcelain_status(repo_dir);
 
     RepoStatus {
         branch,
         is_dirty,
         ahead,
         behind,
+        modified,
+        deleted,
+        added,
     }
 }
 
@@ -112,8 +120,8 @@ fn get_ahead_behind(repo_dir: &Path) -> (usize, usize) {
     (0, 0)
 }
 
-/// Check if repo has any changes (dirty)
-fn is_dirty_check(repo_dir: &Path) -> bool {
+/// Parse porcelain status to get dirty flag and file change counts
+fn parse_porcelain_status(repo_dir: &Path) -> (bool, usize, usize, usize) {
     let output = Command::new("git")
         .args(["status", "--porcelain=v1"])
         .current_dir(repo_dir)
@@ -123,11 +131,38 @@ fn is_dirty_check(repo_dir: &Path) -> bool {
     if let Some(output) = output {
         if output.status.success() {
             let s = String::from_utf8_lossy(&output.stdout);
-            return !s.trim().is_empty();
+            let lines = s.lines().filter(|l| !l.trim().is_empty());
+            let mut modified = 0;
+            let mut deleted = 0;
+            let mut added = 0;
+
+            for line in lines {
+                // Porcelain format: XY filename
+                // X = index status, Y = worktree status
+                let xy = line.as_bytes();
+                if xy.len() < 2 { continue; }
+                let x = xy[0] as char;
+                let y = xy[1] as char;
+
+                // Count based on combined X and Y status
+                let is_modified = x == 'M' || y == 'M'
+                    || x == 'R' || y == 'R'   // renamed counts as modified
+                    || x == 'U' || y == 'U';  // updated but unmerged
+                let is_deleted = x == 'D' || y == 'D';
+                let is_added = x == 'A' || y == 'A'
+                    || x == '?' || y == '?';  // untracked counts as added
+
+                if is_added { added += 1; }
+                else if is_deleted { deleted += 1; }
+                else if is_modified { modified += 1; }
+            }
+
+            let is_dirty = modified > 0 || deleted > 0 || added > 0;
+            return (is_dirty, modified, deleted, added);
         }
     }
 
-    false
+    (false, 0, 0, 0)
 }
 
 /// Check if directory is a git repository
@@ -150,8 +185,13 @@ pub fn get_latest_commit(repo_dir: &Path) -> Option<CommitInfo> {
 
 /// Get the N latest commits of a git repository
 pub fn get_commits(repo_dir: &Path, n: usize) -> Vec<CommitInfo> {
+    get_commits_from_ref(repo_dir, n, "HEAD")
+}
+
+/// Get the N latest commits from a specific ref (e.g. "origin/main")
+pub fn get_commits_from_ref(repo_dir: &Path, n: usize, git_ref: &str) -> Vec<CommitInfo> {
     let output = std::process::Command::new("git")
-        .args(["log", &format!("-{}", n), "--format=%h|%an|%ad|%s", "--date=format:%Y-%m-%d %H:%M"])
+        .args(["log", &format!("-{}", n), "--format=%h|%an|%ad|%s", "--date=format:%Y-%m-%d %H:%M", git_ref])
         .current_dir(repo_dir)
         .output()
         .ok();
@@ -179,4 +219,34 @@ pub fn get_commits(repo_dir: &Path, n: usize) -> Vec<CommitInfo> {
         }
     }
     Vec::new()
+}
+
+/// Fetch remote updates quietly
+pub fn fetch_remote(repo_dir: &Path) -> bool {
+    Command::new("git")
+        .args(["fetch", "--quiet"])
+        .current_dir(repo_dir)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Get the upstream tracking branch name (e.g. "origin/main")
+pub fn get_upstream_branch(repo_dir: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "@{upstream}"])
+        .current_dir(repo_dir)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if branch.is_empty() {
+            None
+        } else {
+            Some(branch)
+        }
+    } else {
+        None
+    }
 }

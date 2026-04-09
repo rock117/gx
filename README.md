@@ -50,6 +50,7 @@ gx <command> [OPTIONS]
 | `--branch` | | Only execute in repos matching this branch | - |
 | `--dry-run` | | Show what would be done without executing | - |
 | `--stop-on-error` | | Stop on first error (default: continue on error) | Continue on error |
+| `--remote` | | Show commits from remote tracking branch (fetch first) | Local commits |
 | `--help` | `-h` | Show help message | - |
 
 Options can be used with any command. For example:
@@ -94,9 +95,13 @@ gx info --branch main              # Filter by branch
 ```bash
 gx last                            # Show latest commit for each repo
 gx last --depth 5                  # With custom depth
+gx last --remote                   # Show latest remote commit (fetch first)
+gx last --remote --branch main     # Show latest commit on origin/main
 gx log                             # Show last 3 commits for each repo
 gx log -5                          # Show last 5 commits for each repo
 gx log -10                         # Show last 10 commits for each repo
+gx log --remote                    # Show last 3 remote commits
+gx log -5 --remote                 # Show last 5 remote commits
 ```
 
 **Manage shortcuts:**
@@ -138,6 +143,8 @@ gx config
 | - | `gx last` | Show latest commit for each repo |
 | - | `gx log` | Show last 3 commits for each repo |
 | - | `gx log -5` | Show last 5 commits for each repo |
+| - | `gx last --remote` | Show latest remote commit for each repo |
+| - | `gx log --remote` | Show last 3 remote commits for each repo |
 | - | `gx --branch main git pull` | Pull only `main` branch repos |
 | - | `gx --dry-run git push` | Preview without executing |
 | - | `gx --stop-on-error git push` | Stop on first error |

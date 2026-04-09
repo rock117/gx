@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::color::{c, Color};
+
 /// Configuration file structure
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
@@ -180,9 +182,9 @@ pub fn add_shortcut(name: &str, command: &str) -> Result<()> {
     save_user_config(&config)?;
 
     if existed {
-        println!("\x1b[33mUpdated\x1b[0m shortcut: \x1b[36m{}\x1b[0m → {}", name, command);
+        println!("{} shortcut: {} → {}", c(Color::Yellow, "Updated"), c(Color::Cyan, name), command);
     } else {
-        println!("\x1b[32mAdded\x1b[0m shortcut: \x1b[36m{}\x1b[0m → {}", name, command);
+        println!("{} shortcut: {} → {}", c(Color::Green, "Added"), c(Color::Cyan, name), command);
     }
     Ok(())
 }
@@ -193,7 +195,7 @@ pub fn remove_shortcut(name: &str) -> Result<()> {
 
     if config.shortcuts.remove(name).is_some() {
         save_user_config(&config)?;
-        println!("\x1b[32mRemoved\x1b[0m shortcut: \x1b[36m{}\x1b[0m", name);
+        println!("{} shortcut: {}", c(Color::Green, "Removed"), c(Color::Cyan, name));
     } else {
         anyhow::bail!("Shortcut '{}' not found", name);
     }
@@ -210,10 +212,10 @@ pub fn list_shortcuts() -> Result<()> {
         return Ok(());
     }
 
-    println!("\x1b[1mShortcuts:\x1b[0m");
+    println!("{}", c(Color::Bold, "Shortcuts:"));
     let max_name_len = config.shortcuts.keys().map(|k| k.len()).max().unwrap_or(10);
     for (name, command) in &config.shortcuts {
-        println!("  \x1b[36m{:<width$}\x1b[0m  {}", name, command, width = max_name_len);
+        println!("  {:<width$}  {}", c(Color::Cyan, name), command, width = max_name_len);
     }
     Ok(())
 }
@@ -230,6 +232,6 @@ pub fn clear_shortcuts() -> Result<()> {
     let count = config.shortcuts.len();
     config.shortcuts.clear();
     save_user_config(&config)?;
-    println!("\x1b[32mCleared\x1b[0m {} shortcut(s)", count);
+    println!("{} {} shortcut(s)", c(Color::Green, "Cleared"), count);
     Ok(())
 }
