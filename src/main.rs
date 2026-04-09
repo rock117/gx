@@ -73,31 +73,73 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let subcmd = &args.command[0];
-    let subcmd_args = &args.command[1..];
+    let (config, _) = load_merged_config()?;
+
+    // Split command args into groups by known subcommand/shortcut boundaries
+    let groups = split_command_groups(&args.command, &config);
+
+    for group in &groups {
+        dispatch_command(&args, &config, group)?;
+    }
+
+    Ok(())
+}
+
+/// Split args into command groups: each known command word starts a new group.
+/// e.g. ["pull", "push"] → [["pull"], ["push"]]
+/// e.g. ["pull", "origin", "main", "push"] → [["pull", "origin", "main"], ["push"]]
+/// Does NOT split inside non-chaining commands (shortcut, config).
+fn split_command_groups(commands: &[String], config: &config::Config) -> Vec<Vec<String>> {
+    let builtins = ["info", "config", "log", "last", "shortcut", "git"];
+    let no_split = ["shortcut", "config"];
+
+    let mut groups: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+    let mut in_no_split = false;
+
+    for arg in commands {
+        if !in_no_split && !current.is_empty()
+            && (builtins.contains(&arg.as_str()) || config.shortcuts.contains_key(arg))
+        {
+            groups.push(std::mem::take(&mut current));
+        }
+        current.push(arg.clone());
+
+        // Track if we entered a no-split command
+        if current.len() == 1 && no_split.contains(&arg.as_str()) {
+            in_no_split = true;
+        }
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    groups
+}
+
+fn dispatch_command(args: &Args, config: &config::Config, group: &[String]) -> Result<()> {
+    let subcmd = &group[0];
+    let subcmd_args = &group[1..];
 
     match subcmd.as_str() {
-        "info" => show_info(&args),
-        "last" => show_last(&args),
-        "log" => show_log(&args, subcmd_args),
+        "info" => show_info(args),
+        "last" => show_last(args),
+        "log" => show_log(args, subcmd_args),
         "config" => show_config_info(),
         "shortcut" => handle_shortcut(subcmd_args),
         "git" => {
             if subcmd_args.is_empty() {
                 anyhow::bail!("Missing git command. Usage: gx git <command> [args]");
             }
-            run_git_command(&args, subcmd_args)
+            run_git_command(args, subcmd_args)
         }
         _ => {
-            // Try to resolve as a shortcut name
-            let (config, _) = load_merged_config()?;
             if let Some(full_cmd) = config.shortcuts.get(subcmd) {
                 let mut expanded: Vec<String> = full_cmd.split_whitespace().map(String::from).collect();
                 expanded.extend_from_slice(subcmd_args);
                 if expanded.is_empty() || expanded[0] != "git" {
                     anyhow::bail!("Shortcut '{}' must expand to a git command", subcmd);
                 }
-                run_git_command(&args, &expanded[1..])
+                run_git_command(args, &expanded[1..])
             } else {
                 anyhow::bail!(
                     "Unknown command '{}'. Available: info, config, shortcut, git, <shortcut_name>",

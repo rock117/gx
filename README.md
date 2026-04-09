@@ -113,6 +113,8 @@ gx shortcut clear                  # Clear all shortcuts
 ```bash
 gx pull                            # equivalent to: gx git pull
 gx pull origin main                # equivalent to: gx git pull origin main
+gx pull push                       # run pull then push sequentially
+gx st pull push                    # run status, pull, push sequentially
 gx st                              # equivalent to: gx git status
 ```
 
@@ -139,7 +141,7 @@ gx config
 | - | `gx --branch main git pull` | Pull only `main` branch repos |
 | - | `gx --dry-run git push` | Preview without executing |
 | - | `gx --stop-on-error git push` | Stop on first error |
-| - | `gx pull` | Use custom shortcut |
+| - | `gx pull push` | Run multiple commands sequentially |
 | - | `gx config` | View configuration |
 
 ### Passing Options to Git
