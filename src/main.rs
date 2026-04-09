@@ -2,6 +2,7 @@ mod color;
 mod config;
 mod collect;
 mod git;
+mod spinner;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -236,7 +237,10 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
                 git_cmd.join(" "),
                 repo.display());
         } else {
-            match execute_git_command(repo, git_cmd) {
+            let sp = spinner::Spinner::new(&format!("git {} in {}...", git_cmd.join(" "), repo.display()));
+            let result = execute_git_command(repo, git_cmd);
+            sp.stop();
+            match result {
                 Ok(_) => succeeded += 1,
                 Err(_) => {
                     failed += 1;
@@ -398,7 +402,9 @@ fn show_last(args: &Args, subcmd_args: &[String]) -> Result<()> {
         let path_padded = format!("{:<width$}", path_str, width = path_width);
 
         if remote {
+            let sp = spinner::Spinner::new(&format!("Fetching {}...", path_str));
             fetch_remote(repo);
+            sp.stop();
             if let Some(upstream) = get_upstream_branch(repo) {
                 let commits = get_commits_from_ref(repo, 1, &upstream);
                 if let Some(commit) = commits.into_iter().next() {
@@ -454,7 +460,9 @@ fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
         let path_str = repo.display().to_string();
 
         if remote {
+            let sp = spinner::Spinner::new(&format!("Fetching {}...", path_str));
             fetch_remote(repo);
+            sp.stop();
             if let Some(upstream) = get_upstream_branch(repo) {
                 let commits = get_commits_from_ref(repo, n, &upstream);
                 if commits.is_empty() {
