@@ -102,6 +102,10 @@ gx log -5                          # Show last 5 commits for each repo
 gx log -10                         # Show last 10 commits for each repo
 gx log --remote                    # Show last 3 remote commits
 gx log -5 --remote                 # Show last 5 remote commits
+gx log --since 2026-04-01                      # Commits since date
+gx log --until 2026-04-09                       # Commits until date
+gx log --author rock                            # Filter by author
+gx log -5 --author rock --since 2026-04-01      # Combine filters
 ```
 
 **Manage shortcuts:**
@@ -145,6 +149,8 @@ gx config
 | - | `gx log -5` | Show last 5 commits for each repo |
 | - | `gx last --remote` | Show latest remote commit for each repo |
 | - | `gx log --remote` | Show last 3 remote commits for each repo |
+| - | `gx log --author rock` | Filter commits by author |
+| - | `gx log --since 2026-04-01 --until 2026-04-09` | Filter commits by date range |
 | - | `gx --branch main git pull` | Pull only `main` branch repos |
 | - | `gx --dry-run git push` | Preview without executing |
 | - | `gx --stop-on-error git push` | Stop on first error |

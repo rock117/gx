@@ -180,18 +180,27 @@ pub struct CommitInfo {
 
 /// Get the latest commit of a git repository
 pub fn get_latest_commit(repo_dir: &Path) -> Option<CommitInfo> {
-    get_commits(repo_dir, 1).into_iter().next()
+    get_commits(repo_dir, 1, &[]).into_iter().next()
 }
 
 /// Get the N latest commits of a git repository
-pub fn get_commits(repo_dir: &Path, n: usize) -> Vec<CommitInfo> {
-    get_commits_from_ref(repo_dir, n, "HEAD")
+pub fn get_commits(repo_dir: &Path, n: usize, extra_args: &[String]) -> Vec<CommitInfo> {
+    get_commits_from_ref(repo_dir, n, "HEAD", extra_args)
 }
 
 /// Get the N latest commits from a specific ref (e.g. "origin/main")
-pub fn get_commits_from_ref(repo_dir: &Path, n: usize, git_ref: &str) -> Vec<CommitInfo> {
+pub fn get_commits_from_ref(repo_dir: &Path, n: usize, git_ref: &str, extra_args: &[String]) -> Vec<CommitInfo> {
+    let mut args = vec![
+        "log".to_string(),
+        format!("-{}", n),
+        "--format=%h|%an|%ad|%s".to_string(),
+        "--date=format:%Y-%m-%d %H:%M".to_string(),
+    ];
+    args.extend_from_slice(extra_args);
+    args.push(git_ref.to_string());
+
     let output = std::process::Command::new("git")
-        .args(["log", &format!("-{}", n), "--format=%h|%an|%ad|%s", "--date=format:%Y-%m-%d %H:%M", git_ref])
+        .args(&args)
         .current_dir(repo_dir)
         .output()
         .ok();

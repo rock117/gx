@@ -406,7 +406,7 @@ fn show_last(args: &Args, subcmd_args: &[String]) -> Result<()> {
             fetch_remote(repo);
             sp.stop();
             if let Some(upstream) = get_upstream_branch(repo) {
-                let commits = get_commits_from_ref(repo, 1, &upstream);
+                let commits = get_commits_from_ref(repo, 1, &upstream, &[]);
                 if let Some(commit) = commits.into_iter().next() {
                     println!("  📁 {}  {}  {}  {}  {}  {}",
                         path_padded,
@@ -440,8 +440,10 @@ fn show_last(args: &Args, subcmd_args: &[String]) -> Result<()> {
 
 fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
     let remote = args.remote || log_args.iter().any(|a| a == "--remote");
-    // Parse -n <count> from log_args
+    // Parse -N count from log_args
     let n = parse_log_count(log_args);
+    // Parse --since, --until, --author filters into git log args
+    let git_filters = parse_log_filters(log_args);
 
     let (config, _loaded_files) = load_merged_config()?;
     let depth = args.depth.unwrap_or(config.default_depth);
@@ -464,7 +466,7 @@ fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
             fetch_remote(repo);
             sp.stop();
             if let Some(upstream) = get_upstream_branch(repo) {
-                let commits = get_commits_from_ref(repo, n, &upstream);
+                let commits = get_commits_from_ref(repo, n, &upstream, &git_filters);
                 if commits.is_empty() {
                     println!("  📁 {}  {}", path_str, c(Color::Gray, &format!("(no commits on {})", upstream)));
                     continue;
@@ -484,7 +486,7 @@ fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
                 println!("  📁 {}  {}", path_str, c(Color::Gray, "(no upstream)"));
             }
         } else {
-            let commits = get_commits(repo, n);
+            let commits = get_commits(repo, n, &git_filters);
             if commits.is_empty() {
                 println!("  📁 {}  {}", path_str, c(Color::Gray, "(no commits)"));
                 continue;
@@ -517,6 +519,35 @@ fn parse_log_count(args: &[String]) -> usize {
         }
     }
     n
+}
+
+/// Parse --since, --until, --author from log subcommand args into git log args
+fn parse_log_filters(args: &[String]) -> Vec<String> {
+    let mut filters = Vec::new();
+    let filter_flags = ["--since", "--until", "--author"];
+
+    let mut i = 0;
+    while i < args.len() {
+        let mut matched = false;
+        for flag in &filter_flags {
+            if args[i] == *flag && i + 1 < args.len() {
+                filters.push(format!("{}={}", flag, args[i + 1]));
+                i += 2;
+                matched = true;
+                break;
+            } else if args[i].starts_with(&format!("{}=", flag)) {
+                filters.push(args[i].clone());
+                i += 1;
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            i += 1;
+        }
+    }
+
+    filters
 }
 
 fn compile_exclude_regexes(config: &config::Config) -> Result<Vec<regex::Regex>> {
