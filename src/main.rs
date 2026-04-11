@@ -296,9 +296,12 @@ fn show_info(args: &Args) -> Result<()> {
         return Ok(());
     }
 
-    // Collect status for all repos
+    // Collect status for all repos (fetch first for accurate ahead/behind)
     let mut repo_infos: Vec<(std::path::PathBuf, git::RepoStatus)> = Vec::new();
     for repo in &repos {
+        let sp = spinner::Spinner::new(&format!("Fetching {}...", repo.display()));
+        fetch_remote(repo);
+        sp.stop();
         let status = get_repo_status(repo);
         repo_infos.push((repo.clone(), status));
     }
@@ -337,12 +340,16 @@ fn show_info(args: &Args) -> Result<()> {
             c(Color::Red, "✗ detached")
         } else if status.is_dirty {
             let mut parts = vec![c(Color::Yellow, "⚠ dirty")];
-            if status.modified > 0 { parts.push(c(Color::BrightYellow, &format!("{}M", status.modified))); }
-            if status.deleted > 0 { parts.push(c(Color::BrightRed, &format!("{}D", status.deleted))); }
-            if status.added > 0 { parts.push(c(Color::BrightGreen, &format!("{}A", status.added))); }
+            parts.push(c(Color::BrightYellow, &format!("{}M", status.modified)));
+            parts.push(c(Color::BrightRed, &format!("{}D", status.deleted)));
+            parts.push(c(Color::BrightGreen, &format!("{}A", status.added)));
             parts.join(" ")
         } else {
-            c(Color::Green, "✓ clean")
+            let mut parts = vec![c(Color::Green, "✓ clean")];
+            parts.push(c(Color::BrightYellow, &format!("{}M", status.modified)));
+            parts.push(c(Color::BrightRed, &format!("{}D", status.deleted)));
+            parts.push(c(Color::BrightGreen, &format!("{}A", status.added)));
+            parts.join(" ")
         };
 
         // Sync (ahead/behind) - always show for repos with branch
