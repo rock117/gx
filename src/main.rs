@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use color::{c, Color};
 use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut, list_shortcuts, clear_shortcuts};
-use git::{execute_git_command, get_current_branch, get_repo_status, get_latest_commit, get_commits, get_commits_from_ref, fetch_remote, get_upstream_branch};
+use git::{run_git_capture, display_git_output, get_current_branch, get_repo_status, get_latest_commit, get_commits, get_commits_from_ref, fetch_remote, get_upstream_branch};
 use collect::collect_git_repos;
 
 const SUBCOMMAND_HELP: &str = "\
@@ -238,11 +238,15 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
                 repo.display());
         } else {
             let sp = spinner::Spinner::new(&format!("git {} in {}...", git_cmd.join(" "), repo.display()));
-            let result = execute_git_command(repo, git_cmd);
+            let result = run_git_capture(repo, git_cmd);
             sp.stop();
-            match result {
-                Ok(_) => succeeded += 1,
-                Err(_) => {
+            match &result {
+                Ok(output) => display_git_output(output),
+                Err(_) => {}
+            }
+            match result.map(|o| o.status.success()) {
+                Ok(true) => succeeded += 1,
+                Ok(false) | Err(_) => {
                     failed += 1;
                     if args.stop_on_error {
                         println!();

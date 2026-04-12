@@ -22,7 +22,16 @@
       "Bash(./target/release/gx.exe --completions bash)",
       "Bash(./target/release/gx.exe --branch main git status)",
       "Bash(./target/release/gx.exe --overview --depth 2)",
-      "Bash(./target/release/gx.exe --info --depth 2)"
+      "Bash(./target/release/gx.exe --info --depth 2)",
+      "Bash(./target/release/gx.exe shortcut:*)",
+      "Bash(./target/release/gx.exe --dry-run --depth 2 pull push)",
+      "Bash(./target/release/gx.exe --dry-run --depth 2 st pull push)",
+      "Bash(./target/release/gx.exe --dry-run --depth 2 pull origin main push)",
+      "Read(//c/rock/coding/code/GxUniversity/GxOa/**)",
+      "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe info:*)",
+      "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe last:*)",
+      "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe pull:*)",
+      "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe log:*)"
     ]
   }
 }

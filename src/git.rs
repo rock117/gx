@@ -4,14 +4,18 @@ use std::process::Command;
 
 use crate::color::{c, Color};
 
-/// Execute git command in the specified repository
-pub fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
+/// Run git command and capture output (without displaying)
+pub fn run_git_capture(repo_dir: &Path, git_cmd: &[String]) -> Result<std::process::Output> {
     let output = Command::new("git")
         .args(git_cmd)
         .current_dir(repo_dir)
         .output()
         .context(format!("Failed to execute git command in: {}", repo_dir.display()))?;
+    Ok(output)
+}
 
+/// Display captured git command output
+pub fn display_git_output(output: &std::process::Output) {
     // Display stdout
     if !output.stdout.is_empty() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -31,8 +35,14 @@ pub fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
     if !output.stdout.is_empty() || !output.stderr.is_empty() {
         println!();
     }
+}
 
-    // Return error if git command failed
+/// Execute git command: capture, display, return result
+#[allow(dead_code)]
+pub fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
+    let output = run_git_capture(repo_dir, git_cmd)?;
+    display_git_output(&output);
+
     if !output.status.success() {
         anyhow::bail!("Git command failed with exit code: {:?}", output.status.code());
     }

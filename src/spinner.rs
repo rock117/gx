@@ -25,7 +25,7 @@ impl Spinner {
                 i = (i + 1) % FRAMES.len();
                 thread::sleep(Duration::from_millis(80));
             }
-            eprint!("\r\x1b[K"); // clear the line
+            eprint!("\r\x1b[K\r"); // clear the line
         });
 
         Spinner {
