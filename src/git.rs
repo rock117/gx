@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::color::{Color, c};
-use crate::proxy::{ProxyMode, detect_proxy, is_network_error};
+use crate::proxy::{ProxyMode, ProxyUrl, detect_proxy, is_network_error};
 
 /// Run git command and capture output (without displaying).
 /// When proxy_mode is Auto or Manual, retries with proxy on network failure.
@@ -29,8 +29,8 @@ pub fn run_git_capture(
     }
 
     // Resolve the proxy URL
-    let proxy_url = match proxy_mode {
-        ProxyMode::Manual(url) => Some(url.clone()),
+    let proxy_url: Option<ProxyUrl> = match proxy_mode {
+        ProxyMode::Manual(url) => Some(ProxyUrl::from_url(url.clone())),
         ProxyMode::Auto => detect_proxy(),
         ProxyMode::Off => unreachable!(),
     };
@@ -43,23 +43,31 @@ pub fn run_git_capture(
     eprintln!(
         "  {} network error detected, retrying with proxy: {}",
         c(Color::Yellow, "⚡"),
-        c(Color::Cyan, &proxy_url)
+        c(Color::Cyan, &proxy_url.url)
     );
 
     // Second attempt: with proxy
     run_git_raw(repo_dir, git_cmd, Some(&proxy_url))
 }
 
-/// Low-level git runner; optionally injects HTTPS_PROXY / HTTP_PROXY env vars.
+/// Low-level git runner; optionally injects proxy env vars into the subprocess.
+///
+/// Git respects different env vars depending on proxy protocol:
+///   HTTP/HTTPS proxy → HTTPS_PROXY + HTTP_PROXY
+///   SOCKS proxy      → ALL_PROXY  (git's curl backend reads this for SOCKS)
 fn run_git_raw(
     repo_dir: &Path,
     git_cmd: &[String],
-    proxy: Option<&str>,
+    proxy: Option<&ProxyUrl>,
 ) -> Result<std::process::Output> {
     let mut cmd = Command::new("git");
     cmd.args(git_cmd).current_dir(repo_dir);
     if let Some(p) = proxy {
-        cmd.env("HTTPS_PROXY", p).env("HTTP_PROXY", p);
+        if p.is_socks {
+            cmd.env("ALL_PROXY", &p.url);
+        } else {
+            cmd.env("HTTPS_PROXY", &p.url).env("HTTP_PROXY", &p.url);
+        }
     }
     cmd.output().context(format!(
         "Failed to execute git command in: {}",
