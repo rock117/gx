@@ -1,6 +1,6 @@
 # gx
 
-A command-line tool that recursively executes git commands across all git repositories in a directory tree.
+A command-line tool that recursively executes git commands across all git repositories in a directory tree. When a network failure occurs, gx automatically detects the system proxy (environment variables or OS settings) and retries — no manual configuration needed.
 
 ## Features
 
