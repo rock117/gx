@@ -51,6 +51,7 @@ gx <command> [OPTIONS]
 | `--dry-run` | | Show what would be done without executing | - |
 | `--stop-on-error` | | Stop on first error (default: continue on error) | Continue on error |
 | `--remote` | | Show commits from remote tracking branch (fetch first) | Local commits |
+| `--proxy` | | Proxy mode: `auto` (default), `off`, or a URL | `auto` |
 | `--help` | `-h` | Show help message | - |
 
 Options can be used with any command. For example:
@@ -59,6 +60,9 @@ Options can be used with any command. For example:
 gx --depth 5 git pull
 gx --branch main info
 gx --dry-run git push
+gx --proxy auto git pull          # auto-detect proxy on network failure (default)
+gx --proxy http://127.0.0.1:7890 git pull  # always use this proxy on failure
+gx --proxy off git pull           # never use a proxy
 ```
 
 ### Examples
@@ -232,6 +236,46 @@ Fast-forward
 - 🟢 Green - Success indicators (✓)
 - 🟡 Yellow - Warnings and dry-run mode
 - 🔴 Red - Error indicators (✗)
+
+## Proxy Support
+
+`gx` can automatically detect and use a proxy when git commands fail due to network errors.
+
+### How It Works
+
+1. **First attempt**: runs git normally without any proxy
+2. **On network failure** (connection refused, host resolution failure, timeout, SSL error, etc.): probes for a proxy and retries once with it injected
+3. **Non-network failures** (authentication error, wrong branch, etc.): returned immediately without retry
+
+This means zero overhead for normal connections — the proxy is only invoked when actually needed.
+
+### Proxy Detection Order (`--proxy auto`)
+
+1. Environment variables: `HTTPS_PROXY` → `HTTP_PROXY` → `ALL_PROXY` (upper and lower case)
+2. OS system proxy:
+   - **Windows**: reads `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (the same proxy your browser uses)
+   - **macOS**: `networksetup -getwebproxy`
+   - **Linux**: `gsettings` (GNOME)
+
+### `--proxy` Option
+
+| Value | Behavior |
+|-------|----------|
+| `auto` (default) | Detect proxy automatically, retry only on network failure |
+| `http://host:port` | Use this proxy URL, retry only on network failure |
+| `off` | Never use a proxy |
+
+```bash
+gx git pull                                    # auto mode (default)
+gx --proxy auto git pull                       # same as above
+gx --proxy http://127.0.0.1:7890 git pull      # use specific proxy on failure
+gx --proxy off git pull                        # disable proxy entirely
+```
+
+When a retry happens, gx prints:
+```
+  ⚡ network error detected, retrying with proxy: http://127.0.0.1:7890
+```
 
 ## Configuration File
 

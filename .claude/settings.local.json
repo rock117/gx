@@ -31,7 +31,21 @@
       "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe info:*)",
       "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe last:*)",
       "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe pull:*)",
-      "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe log:*)"
+      "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe log:*)",
+      "Read(//c/rock/coding/code/my/MyApp/Viper/**)",
+      "Bash(/c/rock/coding/code/my/MyApp/gx/target/debug/gx.exe remote:*)",
+      "Bash(rtk git *)",
+      "Bash(cargo run *)",
+      "Bash(rtk cargo *)",
+      "Bash(./target/debug/gx.exe git *)",
+      "Bash(./target/debug/gx.exe info *)",
+      "Bash(./target/debug/gx.exe pull *)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(rtk read *)",
+      "Bash(gx --version)",
+      "Bash(./target/debug/gx.exe --version)",
+      "Bash(rtk ls *)",
+      "Bash(/c/rock/coding/code/my/MyApp/gx/target/release/gx.exe pull *)"
     ]
   }
 }

@@ -2,16 +2,69 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
-use crate::color::{c, Color};
+use crate::color::{Color, c};
+use crate::proxy::{ProxyMode, detect_proxy, is_network_error};
 
-/// Run git command and capture output (without displaying)
-pub fn run_git_capture(repo_dir: &Path, git_cmd: &[String]) -> Result<std::process::Output> {
-    let output = Command::new("git")
-        .args(git_cmd)
-        .current_dir(repo_dir)
-        .output()
-        .context(format!("Failed to execute git command in: {}", repo_dir.display()))?;
-    Ok(output)
+/// Run git command and capture output (without displaying).
+/// When proxy_mode is Auto or Manual, retries with proxy on network failure.
+pub fn run_git_capture(
+    repo_dir: &Path,
+    git_cmd: &[String],
+    proxy_mode: &ProxyMode,
+) -> Result<std::process::Output> {
+    // First attempt: no proxy injected
+    let output = run_git_raw(repo_dir, git_cmd, None)?;
+
+    // Check if we should attempt a proxy retry
+    let should_retry = match proxy_mode {
+        ProxyMode::Off => false,
+        ProxyMode::Auto | ProxyMode::Manual(_) => {
+            // Only retry on network-level failures
+            !output.status.success() && is_network_error(&String::from_utf8_lossy(&output.stderr))
+        }
+    };
+
+    if !should_retry {
+        return Ok(output);
+    }
+
+    // Resolve the proxy URL
+    let proxy_url = match proxy_mode {
+        ProxyMode::Manual(url) => Some(url.clone()),
+        ProxyMode::Auto => detect_proxy(),
+        ProxyMode::Off => unreachable!(),
+    };
+
+    let Some(proxy_url) = proxy_url else {
+        // No proxy found — return the original (failed) output
+        return Ok(output);
+    };
+
+    eprintln!(
+        "  {} network error detected, retrying with proxy: {}",
+        c(Color::Yellow, "⚡"),
+        c(Color::Cyan, &proxy_url)
+    );
+
+    // Second attempt: with proxy
+    run_git_raw(repo_dir, git_cmd, Some(&proxy_url))
+}
+
+/// Low-level git runner; optionally injects HTTPS_PROXY / HTTP_PROXY env vars.
+fn run_git_raw(
+    repo_dir: &Path,
+    git_cmd: &[String],
+    proxy: Option<&str>,
+) -> Result<std::process::Output> {
+    let mut cmd = Command::new("git");
+    cmd.args(git_cmd).current_dir(repo_dir);
+    if let Some(p) = proxy {
+        cmd.env("HTTPS_PROXY", p).env("HTTP_PROXY", p);
+    }
+    cmd.output().context(format!(
+        "Failed to execute git command in: {}",
+        repo_dir.display()
+    ))
 }
 
 /// Display captured git command output
@@ -40,11 +93,14 @@ pub fn display_git_output(output: &std::process::Output) {
 /// Execute git command: capture, display, return result
 #[allow(dead_code)]
 pub fn execute_git_command(repo_dir: &Path, git_cmd: &[String]) -> Result<()> {
-    let output = run_git_capture(repo_dir, git_cmd)?;
+    let output = run_git_raw(repo_dir, git_cmd, None)?;
     display_git_output(&output);
 
     if !output.status.success() {
-        anyhow::bail!("Git command failed with exit code: {:?}", output.status.code());
+        anyhow::bail!(
+            "Git command failed with exit code: {:?}",
+            output.status.code()
+        );
     }
 
     Ok(())
@@ -150,21 +206,26 @@ fn parse_porcelain_status(repo_dir: &Path) -> (bool, usize, usize, usize) {
                 // Porcelain format: XY filename
                 // X = index status, Y = worktree status
                 let xy = line.as_bytes();
-                if xy.len() < 2 { continue; }
+                if xy.len() < 2 {
+                    continue;
+                }
                 let x = xy[0] as char;
                 let y = xy[1] as char;
 
                 // Count based on combined X and Y status
                 let is_modified = x == 'M' || y == 'M'
                     || x == 'R' || y == 'R'   // renamed counts as modified
-                    || x == 'U' || y == 'U';  // updated but unmerged
+                    || x == 'U' || y == 'U'; // updated but unmerged
                 let is_deleted = x == 'D' || y == 'D';
-                let is_added = x == 'A' || y == 'A'
-                    || x == '?' || y == '?';  // untracked counts as added
+                let is_added = x == 'A' || y == 'A' || x == '?' || y == '?'; // untracked counts as added
 
-                if is_added { added += 1; }
-                else if is_deleted { deleted += 1; }
-                else if is_modified { modified += 1; }
+                if is_added {
+                    added += 1;
+                } else if is_deleted {
+                    deleted += 1;
+                } else if is_modified {
+                    modified += 1;
+                }
             }
 
             let is_dirty = modified > 0 || deleted > 0 || added > 0;
@@ -199,7 +260,12 @@ pub fn get_commits(repo_dir: &Path, n: usize, extra_args: &[String]) -> Vec<Comm
 }
 
 /// Get the N latest commits from a specific ref (e.g. "origin/main")
-pub fn get_commits_from_ref(repo_dir: &Path, n: usize, git_ref: &str, extra_args: &[String]) -> Vec<CommitInfo> {
+pub fn get_commits_from_ref(
+    repo_dir: &Path,
+    n: usize,
+    git_ref: &str,
+    extra_args: &[String],
+) -> Vec<CommitInfo> {
     let mut args = vec![
         "log".to_string(),
         format!("-{}", n),

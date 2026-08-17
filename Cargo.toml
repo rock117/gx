@@ -12,3 +12,6 @@ serde_json = "1.0"
 dirs = "5.0"
 regex = "1.11"
 glob = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"

@@ -1,17 +1,25 @@
+mod collect;
 mod color;
 mod config;
-mod collect;
 mod git;
+mod proxy;
 mod spinner;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use color::{c, Color};
-use config::{load_merged_config, show_config_info, add_shortcut, remove_shortcut, list_shortcuts, clear_shortcuts};
-use git::{run_git_capture, display_git_output, get_current_branch, get_repo_status, get_latest_commit, get_commits, get_commits_from_ref, fetch_remote, get_upstream_branch};
 use collect::collect_git_repos;
+use color::{Color, c};
+use config::{
+    add_shortcut, clear_shortcuts, list_shortcuts, load_merged_config, remove_shortcut,
+    show_config_info,
+};
+use git::{
+    display_git_output, fetch_remote, get_commits, get_commits_from_ref, get_current_branch,
+    get_latest_commit, get_repo_status, get_upstream_branch, run_git_capture,
+};
+use proxy::ProxyMode;
 
 const SUBCOMMAND_HELP: &str = "\
 	Commands:
@@ -60,6 +68,11 @@ struct Args {
     #[arg(long)]
     remote: bool,
 
+    /// Proxy mode: auto (default, retry with proxy on network failure),
+    /// off (never use proxy), or a URL (e.g. http://127.0.0.1:7890)
+    #[arg(long, default_value = "auto")]
+    proxy: String,
+
     /// Subcommand and arguments
     #[arg(num_args = 1.., allow_hyphen_values = true)]
     command: Vec<String>,
@@ -81,12 +94,13 @@ fn run() -> Result<()> {
     }
 
     let (config, _) = load_merged_config()?;
+    let proxy_mode = ProxyMode::from_str(&args.proxy);
 
     // Split command args into groups by known subcommand/shortcut boundaries
     let groups = split_command_groups(&args.command, &config);
 
     for group in &groups {
-        dispatch_command(&args, &config, group)?;
+        dispatch_command(&args, &config, group, &proxy_mode)?;
     }
 
     Ok(())
@@ -105,7 +119,8 @@ fn split_command_groups(commands: &[String], config: &config::Config) -> Vec<Vec
     let mut in_no_split = false;
 
     for arg in commands {
-        if !in_no_split && !current.is_empty()
+        if !in_no_split
+            && !current.is_empty()
             && (builtins.contains(&arg.as_str()) || config.shortcuts.contains_key(arg))
         {
             groups.push(std::mem::take(&mut current));
@@ -123,7 +138,12 @@ fn split_command_groups(commands: &[String], config: &config::Config) -> Vec<Vec
     groups
 }
 
-fn dispatch_command(args: &Args, config: &config::Config, group: &[String]) -> Result<()> {
+fn dispatch_command(
+    args: &Args,
+    config: &config::Config,
+    group: &[String],
+    proxy_mode: &ProxyMode,
+) -> Result<()> {
     let subcmd = &group[0];
     let subcmd_args = &group[1..];
 
@@ -137,16 +157,17 @@ fn dispatch_command(args: &Args, config: &config::Config, group: &[String]) -> R
             if subcmd_args.is_empty() {
                 anyhow::bail!("Missing git command. Usage: gx git <command> [args]");
             }
-            run_git_command(args, subcmd_args)
+            run_git_command(args, subcmd_args, proxy_mode)
         }
         _ => {
             if let Some(full_cmd) = config.shortcuts.get(subcmd) {
-                let mut expanded: Vec<String> = full_cmd.split_whitespace().map(String::from).collect();
+                let mut expanded: Vec<String> =
+                    full_cmd.split_whitespace().map(String::from).collect();
                 expanded.extend_from_slice(subcmd_args);
                 if expanded.is_empty() || expanded[0] != "git" {
                     anyhow::bail!("Shortcut '{}' must expand to a git command", subcmd);
                 }
-                run_git_command(args, &expanded[1..])
+                run_git_command(args, &expanded[1..], proxy_mode)
             } else {
                 anyhow::bail!(
                     "Unknown command '{}'. Available: info, config, shortcut, git, <shortcut_name>",
@@ -157,7 +178,7 @@ fn dispatch_command(args: &Args, config: &config::Config, group: &[String]) -> R
     }
 }
 
-fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
+fn run_git_command(args: &Args, git_cmd: &[String], proxy_mode: &ProxyMode) -> Result<()> {
     let (config, _loaded_files) = load_merged_config()?;
     let depth = args.depth.unwrap_or(config.default_depth);
     let start_dir = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
@@ -170,7 +191,13 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
     println!("Command: git {}\n", git_cmd.join(" "));
 
     if args.dry_run {
-        println!("{}\n", c(Color::Yellow, "[DRY RUN] Showing what would be done without executing"));
+        println!(
+            "{}\n",
+            c(
+                Color::Yellow,
+                "[DRY RUN] Showing what would be done without executing"
+            )
+        );
     }
 
     // Compile regex patterns from config
@@ -178,7 +205,9 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
         .exclude
         .regexes
         .iter()
-        .map(|pattern| regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern)))
+        .map(|pattern| {
+            regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern))
+        })
         .collect();
     let exclude_regexes = exclude_regexes.unwrap_or_default();
 
@@ -204,7 +233,10 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
     };
 
     if filtered_repos.is_empty() {
-        println!("No git repositories matching branch '{}'.", args.branch.as_deref().unwrap_or(""));
+        println!(
+            "No git repositories matching branch '{}'.",
+            args.branch.as_deref().unwrap_or("")
+        );
         return Ok(());
     }
 
@@ -228,17 +260,28 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
         let progress = format!("[{}/{}]", index + 1, total);
 
         match branch.as_deref() {
-            Some(b) => println!("{} 📁 {} => {}", progress, repo.display(), c(Color::Cyan, b)),
+            Some(b) => println!(
+                "{} 📁 {} => {}",
+                progress,
+                repo.display(),
+                c(Color::Cyan, b)
+            ),
             None => println!("{} 📁 {}", progress, repo.display()),
         };
 
         if args.dry_run {
-            println!("  [DRY RUN] Would execute: git {} in {}",
+            println!(
+                "  [DRY RUN] Would execute: git {} in {}",
                 git_cmd.join(" "),
-                repo.display());
+                repo.display()
+            );
         } else {
-            let sp = spinner::Spinner::new(&format!("git {} in {}...", git_cmd.join(" "), repo.display()));
-            let result = run_git_capture(repo, git_cmd);
+            let sp = spinner::Spinner::new(&format!(
+                "git {} in {}...",
+                git_cmd.join(" "),
+                repo.display()
+            ));
+            let result = run_git_capture(repo, git_cmd, proxy_mode);
             sp.stop();
             match &result {
                 Ok(output) => display_git_output(output),
@@ -250,9 +293,16 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
                     failed += 1;
                     if args.stop_on_error {
                         println!();
-                        println!("{}",
-                            c(Color::Red, &format!("✗ Stopped at {} (default: continue on error, use --stop-on-error to stop)",
-                                repo.display())));
+                        println!(
+                            "{}",
+                            c(
+                                Color::Red,
+                                &format!(
+                                    "✗ Stopped at {} (default: continue on error, use --stop-on-error to stop)",
+                                    repo.display()
+                                )
+                            )
+                        );
                         break;
                     }
                 }
@@ -264,16 +314,37 @@ fn run_git_command(args: &Args, git_cmd: &[String]) -> Result<()> {
     println!();
     let processed = succeeded + failed;
     if args.dry_run {
-        println!("{}", c(Color::Yellow, &format!("[DRY RUN] Summary: {} repositories would be affected", total)));
+        println!(
+            "{}",
+            c(
+                Color::Yellow,
+                &format!(
+                    "[DRY RUN] Summary: {} repositories would be affected",
+                    total
+                )
+            )
+        );
     } else {
-        let status = if failed == 0 { c(Color::Green, "✓") } else { c(Color::Yellow, "⚠") };
-        println!("{} Summary: {} processed, {} succeeded, {} failed",
+        let status = if failed == 0 {
+            c(Color::Green, "✓")
+        } else {
+            c(Color::Yellow, "⚠")
+        };
+        println!(
+            "{} Summary: {} processed, {} succeeded, {} failed",
             status,
             c(Color::Cyan, &processed.to_string()),
             c(Color::Green, &succeeded.to_string()),
-            c(Color::Red, &failed.to_string()));
+            c(Color::Red, &failed.to_string())
+        );
         if processed < total {
-            println!("  {}", c(Color::Yellow, &format!("{} repositories skipped (stopped early)", total - processed)));
+            println!(
+                "  {}",
+                c(
+                    Color::Yellow,
+                    &format!("{} repositories skipped (stopped early)", total - processed)
+                )
+            );
         }
     }
 
@@ -290,7 +361,9 @@ fn show_info(args: &Args) -> Result<()> {
         .exclude
         .regexes
         .iter()
-        .map(|pattern| regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern)))
+        .map(|pattern| {
+            regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern))
+        })
         .collect();
     let exclude_regexes = exclude_regexes.unwrap_or_default();
 
@@ -312,20 +385,29 @@ fn show_info(args: &Args) -> Result<()> {
 
     // Filter by branch if specified
     if let Some(ref branch_filter) = args.branch {
-        repo_infos.retain(|(_, status)| {
-            status.branch.as_deref() == Some(branch_filter.as_str())
-        });
+        repo_infos.retain(|(_, status)| status.branch.as_deref() == Some(branch_filter.as_str()));
     }
 
     if repo_infos.is_empty() {
-        println!("No git repositories matching branch '{}'.", args.branch.as_deref().unwrap_or(""));
+        println!(
+            "No git repositories matching branch '{}'.",
+            args.branch.as_deref().unwrap_or("")
+        );
         return Ok(());
     }
 
     // Calculate column widths for alignment (based on visible chars only)
-    let max_path_len = repo_infos.iter().map(|(p, _)| p.display().to_string().len()).max().unwrap_or(10);
+    let max_path_len = repo_infos
+        .iter()
+        .map(|(p, _)| p.display().to_string().len())
+        .max()
+        .unwrap_or(10);
     let path_width = max_path_len.max(6);
-    let max_branch_len = repo_infos.iter().map(|(_, s)| s.branch.as_ref().map_or(8, |b| b.len())).max().unwrap_or(6);
+    let max_branch_len = repo_infos
+        .iter()
+        .map(|(_, s)| s.branch.as_ref().map_or(8, |b| b.len()))
+        .max()
+        .unwrap_or(6);
     let branch_width = max_branch_len.max(6);
 
     let total = repo_infos.len();
@@ -367,11 +449,9 @@ fn show_info(args: &Args) -> Result<()> {
         let path_padded = format!("{:<width$}", path_str, width = path_width);
         let branch_padding = " ".repeat(branch_width - branch_visible_len);
 
-        println!("  📁 {}  {}{}  {}  {}",
-            path_padded,
-            branch_display, branch_padding,
-            status_display,
-            sync_display,
+        println!(
+            "  📁 {}  {}{}  {}  {}",
+            path_padded, branch_display, branch_padding, status_display, sync_display,
         );
     }
 
@@ -382,9 +462,15 @@ fn show_info(args: &Args) -> Result<()> {
 
     println!();
     print!("  Total: {} repos", total);
-    if dirty_count > 0 { print!(" | {} dirty", c(Color::Yellow, &dirty_count.to_string())); }
-    if ahead_count > 0 { print!(" | {} ahead", c(Color::Green, &ahead_count.to_string())); }
-    if behind_count > 0 { print!(" | {} behind", c(Color::Red, &behind_count.to_string())); }
+    if dirty_count > 0 {
+        print!(" | {} dirty", c(Color::Yellow, &dirty_count.to_string()));
+    }
+    if ahead_count > 0 {
+        print!(" | {} ahead", c(Color::Green, &ahead_count.to_string()));
+    }
+    if behind_count > 0 {
+        print!(" | {} behind", c(Color::Red, &behind_count.to_string()));
+    }
     println!();
 
     Ok(())
@@ -405,7 +491,11 @@ fn show_last(args: &Args, subcmd_args: &[String]) -> Result<()> {
         return Ok(());
     }
 
-    let max_path_len = filtered_repos.iter().map(|p| p.display().to_string().len()).max().unwrap_or(10);
+    let max_path_len = filtered_repos
+        .iter()
+        .map(|p| p.display().to_string().len())
+        .max()
+        .unwrap_or(10);
     let path_width = max_path_len.max(6);
 
     for repo in &filtered_repos {
@@ -419,7 +509,8 @@ fn show_last(args: &Args, subcmd_args: &[String]) -> Result<()> {
             if let Some(upstream) = get_upstream_branch(repo) {
                 let commits = get_commits_from_ref(repo, 1, &upstream, &[]);
                 if let Some(commit) = commits.into_iter().next() {
-                    println!("  📁 {}  {}  {}  {}  {}  {}",
+                    println!(
+                        "  📁 {}  {}  {}  {}  {}  {}",
                         path_padded,
                         c(Color::Gray, &format!("({})", upstream)),
                         c(Color::Yellow, &commit.hash),
@@ -428,13 +519,18 @@ fn show_last(args: &Args, subcmd_args: &[String]) -> Result<()> {
                         commit.message,
                     );
                 } else {
-                    println!("  📁 {}  {}", path_padded, c(Color::Gray, &format!("(no commits on {})", upstream)));
+                    println!(
+                        "  📁 {}  {}",
+                        path_padded,
+                        c(Color::Gray, &format!("(no commits on {})", upstream))
+                    );
                 }
             } else {
                 println!("  📁 {}  {}", path_padded, c(Color::Gray, "(no upstream)"));
             }
         } else if let Some(commit) = get_latest_commit(repo) {
-            println!("  📁 {}  {}  {}  {}  {}",
+            println!(
+                "  📁 {}  {}  {}  {}  {}",
                 path_padded,
                 c(Color::Yellow, &commit.hash),
                 c(Color::Cyan, &commit.author),
@@ -479,13 +575,22 @@ fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
             if let Some(upstream) = get_upstream_branch(repo) {
                 let commits = get_commits_from_ref(repo, n, &upstream, &git_filters);
                 if commits.is_empty() {
-                    println!("  📁 {}  {}", path_str, c(Color::Gray, &format!("(no commits on {})", upstream)));
+                    println!(
+                        "  📁 {}  {}",
+                        path_str,
+                        c(Color::Gray, &format!("(no commits on {})", upstream))
+                    );
                     continue;
                 }
 
-                println!("  📁 {} {}:", path_str, c(Color::Gray, &format!("({})", upstream)));
+                println!(
+                    "  📁 {} {}:",
+                    path_str,
+                    c(Color::Gray, &format!("({})", upstream))
+                );
                 for commit in &commits {
-                    println!("    {}  {}  {}  {}",
+                    println!(
+                        "    {}  {}  {}  {}",
                         c(Color::Yellow, &commit.hash),
                         c(Color::Cyan, &commit.author),
                         c(Color::Gray, &commit.date),
@@ -505,7 +610,8 @@ fn show_log(args: &Args, log_args: &[String]) -> Result<()> {
 
             println!("  📁 {}:", path_str);
             for commit in &commits {
-                println!("    {}  {}  {}  {}",
+                println!(
+                    "    {}  {}  {}  {}",
                     c(Color::Yellow, &commit.hash),
                     c(Color::Cyan, &commit.author),
                     c(Color::Gray, &commit.date),
@@ -566,7 +672,9 @@ fn compile_exclude_regexes(config: &config::Config) -> Result<Vec<regex::Regex>>
         .exclude
         .regexes
         .iter()
-        .map(|pattern| regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern)))
+        .map(|pattern| {
+            regex::Regex::new(pattern).context(format!("Invalid regex pattern: {}", pattern))
+        })
         .collect::<Result<Vec<_>>>()
         .map_err(Into::into)
 }
@@ -575,9 +683,7 @@ fn filter_repos_by_branch(repos: &[PathBuf], branch_filter: &Option<String>) -> 
     if let Some(branch) = branch_filter {
         repos
             .iter()
-            .filter(|repo| {
-                get_current_branch(repo).as_deref() == Some(branch.as_str())
-            })
+            .filter(|repo| get_current_branch(repo).as_deref() == Some(branch.as_str()))
             .cloned()
             .collect()
     } else {
@@ -610,7 +716,10 @@ fn handle_shortcut(args: &[String]) -> Result<()> {
             clear_shortcuts()?;
         }
         other => {
-            anyhow::bail!("Unknown shortcut command '{}'. Use: add, rm, list, clear", other);
+            anyhow::bail!(
+                "Unknown shortcut command '{}'. Use: add, rm, list, clear",
+                other
+            );
         }
     }
 
