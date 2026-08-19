@@ -73,8 +73,11 @@ struct Args {
     #[arg(long, default_value = "auto")]
     proxy: String,
 
-    /// Subcommand and arguments
-    #[arg(num_args = 1.., allow_hyphen_values = true)]
+    /// Subcommand and arguments.
+    /// `trailing_var_arg` ensures everything after the first positional
+    /// (including `-v`, `-5`, `--foo` etc.) is captured into `command`
+    /// rather than being parsed as gx's own options.
+    #[arg(num_args = 1.., allow_hyphen_values = true, trailing_var_arg = true)]
     command: Vec<String>,
 }
 
