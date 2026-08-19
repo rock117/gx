@@ -117,10 +117,15 @@ fn split_command_groups(commands: &[String], config: &config::Config) -> Vec<Vec
     let mut groups: Vec<Vec<String>> = Vec::new();
     let mut current: Vec<String> = Vec::new();
     let mut in_no_split = false;
+    // Track when the previous token was "git" — the token after "git" is a git
+    // subcommand (e.g. "init", "clone", "pull") and must not be treated as a
+    // shortcut boundary even if a shortcut with the same name exists.
+    let mut prev_is_git = false;
 
     for arg in commands {
         if !in_no_split
             && !current.is_empty()
+            && !prev_is_git
             && (builtins.contains(&arg.as_str()) || config.shortcuts.contains_key(arg))
         {
             groups.push(std::mem::take(&mut current));
@@ -131,6 +136,8 @@ fn split_command_groups(commands: &[String], config: &config::Config) -> Vec<Vec
         if current.len() == 1 && no_split.contains(&arg.as_str()) {
             in_no_split = true;
         }
+
+        prev_is_git = arg == "git";
     }
     if !current.is_empty() {
         groups.push(current);
@@ -157,7 +164,12 @@ fn dispatch_command(
             if subcmd_args.is_empty() {
                 anyhow::bail!("Missing git command. Usage: gx git <command> [args]");
             }
-            run_git_command(args, subcmd_args, proxy_mode)
+            // git init / git clone create new repos — don't search for existing ones
+            if is_direct_git_command(&subcmd_args[0]) {
+                run_git_direct(args, subcmd_args, proxy_mode)
+            } else {
+                run_git_command(args, subcmd_args, proxy_mode)
+            }
         }
         _ => {
             if let Some(full_cmd) = config.shortcuts.get(subcmd) {
@@ -167,7 +179,12 @@ fn dispatch_command(
                 if expanded.is_empty() || expanded[0] != "git" {
                     anyhow::bail!("Shortcut '{}' must expand to a git command", subcmd);
                 }
-                run_git_command(args, &expanded[1..], proxy_mode)
+                // Same direct-command check for shortcuts that expand to init/clone
+                if is_direct_git_command(&expanded[1]) {
+                    run_git_direct(args, &expanded[1..], proxy_mode)
+                } else {
+                    run_git_command(args, &expanded[1..], proxy_mode)
+                }
             } else {
                 anyhow::bail!(
                     "Unknown command '{}'. Available: info, config, shortcut, git, <shortcut_name>",
@@ -176,6 +193,63 @@ fn dispatch_command(
             }
         }
     }
+}
+
+/// Git subcommands that create new repositories rather than operating on
+/// existing ones. These should run once in the current directory instead of
+/// being fanned out across all discovered repos.
+fn is_direct_git_command(subcmd: &str) -> bool {
+    matches!(subcmd, "init" | "clone")
+}
+
+/// Run a git command directly in the current (or --path) directory exactly once.
+/// Used for `git init` and `git clone` which don't make sense to run across
+/// multiple existing repositories.
+fn run_git_direct(args: &Args, git_cmd: &[String], proxy_mode: &ProxyMode) -> Result<()> {
+    let start_dir = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
+
+    println!("Command: git {}", git_cmd.join(" "));
+    println!("Directory: {}\n", start_dir.display());
+
+    if args.dry_run {
+        println!(
+            "{}",
+            c(
+                Color::Yellow,
+                &format!(
+                    "[DRY RUN] Would execute: git {} in {}",
+                    git_cmd.join(" "),
+                    start_dir.display()
+                )
+            )
+        );
+        println!();
+        return Ok(());
+    }
+
+    let sp = spinner::Spinner::new(&format!(
+        "git {} in {}...",
+        git_cmd.join(" "),
+        start_dir.display()
+    ));
+    let result = run_git_capture(&start_dir, git_cmd, proxy_mode);
+    sp.stop();
+
+    match &result {
+        Ok(output) => display_git_output(output),
+        Err(_) => {}
+    }
+
+    match result.map(|o| o.status.success()) {
+        Ok(true) => {
+            println!("{} Done.", c(Color::Green, "✓"));
+        }
+        Ok(false) | Err(_) => {
+            println!("{} Failed.", c(Color::Red, "✗"));
+        }
+    }
+
+    Ok(())
 }
 
 fn run_git_command(args: &Args, git_cmd: &[String], proxy_mode: &ProxyMode) -> Result<()> {
